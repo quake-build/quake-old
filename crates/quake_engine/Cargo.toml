@@ -1,0 +1,13 @@
+[package]
+name = "quake_engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+miette = "5.10.0"
+nu-cmd-lang = "0.86.0"
+nu-command = "0.86.0"
+nu-engine = "0.86.0"
+nu-parser = "0.86.0"
+nu-path = "0.86.0"
+nu-protocol = "0.86.0"
