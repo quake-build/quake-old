@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::anyhow;
 
 use quake_core::prelude::*;
@@ -16,7 +18,7 @@ fn main() -> Result<()> {
     let online_docs_url = option_env!("QUAKE_ONLINE_DOCS").unwrap_or("https://docs.quake.build/");
     let _offline_docs_url = option_env!("QUAKE_OFFLINE_DOCS");
 
-    let _matches = {
+    let matches = {
         use clap::*;
 
         Command::new("quake")
@@ -91,6 +93,14 @@ fn main() -> Result<()> {
                             ),
                     ]),
             ])
+            .next_help_heading("Environment")
+            .args([Arg::new("project")
+                .short('p')
+                .long("project")
+                .value_name("PROJECT_DIR")
+                .value_hint(ValueHint::DirPath)
+                .help("Path to the project root directory")
+                .global(true)])
             .next_help_heading("Configuration")
             .args([
                 Arg::new("config")
@@ -157,21 +167,15 @@ fn main() -> Result<()> {
             .get_matches()
     };
 
-    // Ignore all else and just do something fun.
-    let source = b"ls | length";
+    let project_root = matches
+        .get_one::<String>("project")
+        .map(PathBuf::from)
+        .or_else(get_init_cwd)
+        .ok_or(errors::ProjectNotFound)?;
 
-    let mut engine_state = create_engine_state();
-    let mut stack = create_stack();
-    let input = create_stdin_input();
-
-    eval_source(
-        &mut engine_state,
-        &mut stack,
-        source,
-        "application",
-        input,
-        true,
-    );
+    let project = Project::new(project_root)?;
+    let mut engine = Engine::new(project)?;
+    engine.run()?;
 
     Ok(())
 }

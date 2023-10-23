@@ -2,7 +2,7 @@
 // get something working.
 
 use std::io::BufReader;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -14,6 +14,8 @@ use nu_protocol::engine::{EngineState, Stack, StateWorkingSet};
 use nu_protocol::{
     print_if_stream, BufferedReader, CliError, PipelineData, RawStream, Span, Value,
 };
+
+use quake_core::prelude::*;
 
 pub fn set_last_exit_code(stack: &mut Stack, exit_code: i64) {
     stack.add_env_var(
@@ -43,12 +45,10 @@ pub fn report_error(
     }
 }
 
-pub fn get_init_cwd() -> PathBuf {
-    std::env::current_dir().unwrap_or_else(|_| {
-        std::env::var("PWD")
-            .map(Into::into)
-            .unwrap_or_else(|_| nu_path::home_dir().unwrap_or_default())
-    })
+pub fn get_init_cwd() -> Option<PathBuf> {
+    std::env::current_dir()
+        .ok()
+        .or_else(|| std::env::var("PWD").ok().map(Into::into))
 }
 
 pub fn eval_source(
@@ -165,19 +165,22 @@ pub fn create_engine_state() -> EngineState {
     add_shell_command_context(engine_state)
 }
 
-pub fn create_stack() -> nu_protocol::engine::Stack {
+pub fn create_stack(cwd: impl AsRef<Path>) -> Stack {
     // stack
-    let mut stack = nu_protocol::engine::Stack::new();
-
-    let path = get_init_cwd();
+    let mut stack = Stack::new();
 
     stack.add_env_var(
         "PWD".into(),
         Value::String {
-            val: path.to_string_lossy().to_string(),
+            val: cwd.as_ref().to_string_lossy().to_string(),
             internal_span: Span::unknown(),
         },
     );
 
     stack
+}
+
+pub fn locate_project_root() -> Result<PathBuf> {
+    // TODO do more advanced project inference
+    get_init_cwd().ok_or_else(|| errors::ProjectNotFound.into())
 }
