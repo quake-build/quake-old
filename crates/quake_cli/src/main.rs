@@ -1,16 +1,14 @@
 use std::path::PathBuf;
 
-use anyhow::anyhow;
-
 use quake_core::prelude::*;
 use quake_engine::*;
 
 /// Parse a config property consisting of a single key-value pair in the form
 /// `PROPERTY=VALUE`.
-fn parse_config_property(s: &str) -> anyhow::Result<(String, String)> {
+fn parse_config_property(s: &str) -> Result<(String, String)> {
     let pos = s
         .find('=')
-        .ok_or_else(|| anyhow!("invalid config property `{s}`"))?;
+        .ok_or_else(|| miette!("Invalid config property `{s}`"))?;
     Ok((s[..pos].to_owned(), s[pos + 1..].to_owned()))
 }
 
