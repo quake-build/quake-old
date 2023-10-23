@@ -1,1 +1,1 @@
-pub use quake_errors::*;
+pub mod prelude;

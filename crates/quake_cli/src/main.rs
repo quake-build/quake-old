@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 
-use quake_core::Result;
+use quake_core::prelude::*;
 use quake_engine::*;
 
 /// Parse a config property consisting of a single key-value pair in the form
