@@ -1,48 +1,20 @@
 // Taken directly from https://github.com/jntrnr/nu_app (MIT licensed) to just
 // get something working.
 
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 use nu_cmd_lang::create_default_context;
 use nu_command::add_shell_command_context;
 use nu_engine::{eval_block, eval_block_with_early_return};
 use nu_parser::parse;
 use nu_protocol::engine::{EngineState, Stack, StateWorkingSet};
-use nu_protocol::{
-    print_if_stream, BufferedReader, CliError, PipelineData, RawStream, Span, Value,
-};
-
-use quake_core::prelude::*;
+use nu_protocol::{print_if_stream, report_error, report_error_new, PipelineData, Span, Value};
 
 pub fn set_last_exit_code(stack: &mut Stack, exit_code: i64) {
     stack.add_env_var(
         "LAST_EXIT_CODE".to_string(),
         Value::int(exit_code, Span::unknown()),
     );
-}
-
-pub fn report_error_new(
-    engine_state: &EngineState,
-    error: &(dyn miette::Diagnostic + Send + Sync + 'static),
-) {
-    let working_set = StateWorkingSet::new(engine_state);
-
-    report_error(&working_set, error);
-}
-
-pub fn report_error(
-    working_set: &StateWorkingSet,
-    error: &(dyn miette::Diagnostic + Send + Sync + 'static),
-) {
-    eprintln!("Error: {:?}", CliError(error, working_set));
-    // reset vt processing, aka ansi because illbehaved externals can break it
-    #[cfg(windows)]
-    {
-        let _ = nu_utils::enable_vt_processing();
-    }
 }
 
 pub fn get_init_cwd() -> Option<PathBuf> {
@@ -105,10 +77,7 @@ pub fn eval_source(
 
             match result {
                 Err(err) => {
-                    let working_set = StateWorkingSet::new(engine_state);
-
-                    report_error(&working_set, &err);
-
+                    report_error_new(engine_state, &err);
                     return false;
                 }
                 Ok(exit_code) => {
@@ -124,38 +93,11 @@ pub fn eval_source(
         }
         Err(err) => {
             set_last_exit_code(stack, 1);
-
-            let working_set = StateWorkingSet::new(engine_state);
-
-            report_error(&working_set, &err);
-
+            report_error_new(engine_state, &err);
             return false;
         }
     }
     true
-}
-
-pub fn create_stdin_input() -> PipelineData {
-    // stdin
-    let stdin = std::io::stdin();
-    let buf_reader = BufReader::new(stdin);
-
-    // ctrl-c
-    let ctrlc = Arc::new(AtomicBool::new(false));
-
-    PipelineData::ExternalStream {
-        stdout: Some(RawStream::new(
-            Box::new(BufferedReader::new(buf_reader)),
-            Some(ctrlc),
-            Span::unknown(),
-            None,
-        )),
-        stderr: None,
-        exit_code: None,
-        span: Span::unknown(),
-        metadata: None,
-        trim_end_newline: false,
-    }
 }
 
 pub fn create_engine_state() -> EngineState {
@@ -178,9 +120,4 @@ pub fn create_stack(cwd: impl AsRef<Path>) -> Stack {
     );
 
     stack
-}
-
-pub fn locate_project_root() -> Result<PathBuf> {
-    // TODO do more advanced project inference
-    get_init_cwd().ok_or_else(|| errors::ProjectNotFound.into())
 }
