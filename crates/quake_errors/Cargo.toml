@@ -1,0 +1,13 @@
+[package]
+name = "quake_errors"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+miette = "5.10.0"
+nu-protocol = "0.86.0"
+serde = { version = "1.0.189", features = ["derive"], optional = true }
+thiserror = "1.0.50"
+
+[features]
+serde = ["dep:serde"]

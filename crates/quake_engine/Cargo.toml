@@ -11,3 +11,5 @@ nu-engine = "0.86.0"
 nu-parser = "0.86.0"
 nu-path = "0.86.0"
 nu-protocol = "0.86.0"
+
+quake_core = { path = "../quake_core" }

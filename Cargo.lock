@@ -1923,7 +1923,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "quake_core",
  "quake_engine",
+]
+
+[[package]]
+name = "quake_core"
+version = "0.1.0"
+dependencies = [
+ "quake_errors",
 ]
 
 [[package]]
@@ -1937,6 +1945,17 @@ dependencies = [
  "nu-parser",
  "nu-path",
  "nu-protocol",
+ "quake_core",
+]
+
+[[package]]
+name = "quake_errors"
+version = "0.1.0"
+dependencies = [
+ "miette",
+ "nu-protocol",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]

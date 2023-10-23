@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 
+use quake_core::Result;
 use quake_engine::*;
 
 /// Parse a config property consisting of a single key-value pair in the form
@@ -11,7 +12,7 @@ fn parse_config_property(s: &str) -> anyhow::Result<(String, String)> {
     Ok((s[..pos].to_owned(), s[pos + 1..].to_owned()))
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
     let online_docs_url = option_env!("QUAKE_ONLINE_DOCS").unwrap_or("https://docs.quake.build/");
     let _offline_docs_url = option_env!("QUAKE_OFFLINE_DOCS");
 
