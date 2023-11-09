@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use nu_ansi_term::{Color, Style};
 use nu_cli::gather_parent_env_vars;
 use nu_cmd_lang::create_default_context;
 use nu_command::add_shell_command_context;
@@ -42,13 +43,17 @@ pub const QUAKE_SCOPE_VARIABLE_ID: VarId = 6;
 #[derive(Clone)]
 pub struct Engine {
     project: Project,
+    options: Options,
     internal_state: Arc<Mutex<State>>,
     engine_state: EngineState,
     stack: Stack,
 }
 
 impl Engine {
-    pub fn new(project: Project) -> Result<Self> {
+    pub fn new(project: Project, options: Options) -> Result<Self> {
+        #[cfg(windows)]
+        nu_ansi_term::enable_ansi_support();
+
         let build_state = Arc::new(Mutex::new(State::new()));
 
         let engine_state = create_engine_state()?;
@@ -56,6 +61,7 @@ impl Engine {
 
         Ok(Self {
             project,
+            options,
             internal_state: build_state,
             engine_state,
             stack,
@@ -66,7 +72,7 @@ impl Engine {
         &self.project
     }
 
-    pub fn run(&mut self, options: RunOptions) -> Result<bool> {
+    pub fn run(&mut self) -> Result<bool> {
         // load and evaluate the build script
 
         let build_script = self.project.build_script();
@@ -89,7 +95,7 @@ impl Engine {
         metadata.validate()?;
 
         // determine a build plan (i.e. the order in which to evaluate dependencies)
-        let build_plan = generate_build_plan(&options, &metadata)?;
+        let build_plan = generate_build_plan(&self.options, &metadata)?;
 
         // run all tasks in the proper order
         for task in build_plan {
@@ -98,14 +104,19 @@ impl Engine {
 
             // perform a dirty check only if both sources and artifacts are defined
             if !is_dirty(&sources, &artifacts)? {
+                self.print_action("Skipping", &task.name.item);
                 continue;
             }
+
+            self.print_action("Running", &task.name.item);
 
             let block = self.engine_state.get_block(task.run_block).clone();
             if !self.eval_block(&block) {
                 break;
             }
         }
+
+        self.print_action("Completed", &self.options.task);
 
         Ok(true)
     }
@@ -183,11 +194,27 @@ impl Engine {
 
         true
     }
+
+    fn print_action(&self, action: &str, message: &str) {
+        const MAX_ACTION_LENGTH: usize = 11;
+
+        if !self.options.quiet {
+            eprintln!(
+                "{} {}",
+                Style::new()
+                    .bold()
+                    .fg(Color::Cyan)
+                    .paint(format!("{action:>MAX_ACTION_LENGTH$}")),
+                message
+            );
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct RunOptions {
+pub struct Options {
     pub task: String,
+    pub quiet: bool,
 }
 
 fn create_engine_state() -> Result<EngineState> {
@@ -259,7 +286,7 @@ fn create_stack(state: Arc<Mutex<State>>, cwd: impl AsRef<Path>) -> Stack {
 }
 
 fn generate_build_plan<'a>(
-    options: &RunOptions,
+    options: &Options,
     metadata: &'a BuildMetadata,
 ) -> Result<Vec<&'a Task>> {
     // NOTE metadata is assumed to have been validated

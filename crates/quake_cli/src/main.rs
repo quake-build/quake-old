@@ -163,20 +163,22 @@ fn main() -> Result<()> {
             .get_matches()
     };
 
-    let project_root = matches
-        .get_one::<String>("project")
-        .map(PathBuf::from)
-        .or_else(get_init_cwd)
-        .ok_or(errors::ProjectNotFound)?;
+    let project = {
+        let project_root = matches
+            .get_one::<String>("project")
+            .map(PathBuf::from)
+            .or_else(get_init_cwd)
+            .ok_or(errors::ProjectNotFound)?;
+        Project::new(project_root)?
+    };
 
-    let task = matches.get_one::<String>("task").unwrap().clone();
+    let options = {
+        let task = matches.get_one::<String>("task").unwrap().clone();
+        let quiet = matches.get_flag("quiet");
+        Options { task, quiet }
+    };
 
-    let project = Project::new(project_root)?;
-    let mut engine = Engine::new(project)?;
-
-    let options = RunOptions { task };
-
-    engine.run(options)?;
+    Engine::new(project, options)?.run()?;
 
     Ok(())
 }
