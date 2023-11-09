@@ -13,13 +13,13 @@ use nu_parser::parse;
 use nu_protocol::ast::Block;
 use nu_protocol::engine::{EngineState, Stack, StateWorkingSet, PWD_ENV};
 use nu_protocol::{
-    print_if_stream, report_error, report_error_new, PipelineData, Span, Spanned, Type, Value,
-    VarId,
+    print_if_stream, report_error, report_error_new, BlockId, PipelineData, Span, Spanned, Type,
+    Value, VarId,
 };
 
 use quake_core::prelude::*;
 
-use crate::metadata::{BuildMetadata, Task};
+use crate::metadata::{BuildMetadata, Dependency, Task};
 use crate::state::{State, StateVariable};
 
 mod commands;
@@ -100,15 +100,31 @@ impl Engine {
         let build_plan = generate_build_plan(&self.options, &metadata)?;
 
         // run all tasks in the proper order
-        for task in build_plan {
-            // perform a dirty check only if both sources and artifacts are defined
-            if !is_dirty(task)? {
-                self.print_action("Skipping", &task.name.item);
-                continue;
+        for run_task in build_plan {
+            if let RunTask::Task(task) = run_task {
+                // perform a dirty check only if both sources and artifacts are defined
+                if !is_dirty(task)? {
+                    self.print_action("Skipping", &task.name.item);
+                    continue;
+                }
             }
 
-            if let Some(run_block) = task.run_block {
-                self.print_action("Running", &task.name.item);
+            let run_block = match run_task {
+                RunTask::Task(task) => {
+                    if task.run_block.is_some() {
+                        self.print_action("Running", &task.name.item);
+                    }
+                    task.run_block
+                }
+                RunTask::Anonymous { block_id, argument } => {
+                    if let Some(var) = argument {
+                        self.stack.vars.push(var);
+                    }
+                    Some(block_id)
+                }
+            };
+
+            if let Some(run_block) = run_block {
                 let block = self.engine_state.get_block(run_block).clone();
                 if !self.eval_block(&block) {
                     break;
@@ -116,7 +132,7 @@ impl Engine {
             }
         }
 
-        self.print_action("Completed", &self.options.task);
+        self.print_action("Finished", &self.options.task);
 
         Ok(true)
     }
@@ -262,6 +278,7 @@ fn create_engine_state(state: Arc<Mutex<State>>) -> Result<EngineState> {
 
         bind_command! {
             DefTask,
+            Subtask,
             Depends,
             Sources,
             Produces
@@ -293,20 +310,39 @@ fn create_stack(cwd: impl AsRef<Path>) -> Stack {
     stack
 }
 
+#[derive(PartialEq)]
+enum RunTask<'a> {
+    Task(&'a Task),
+    Anonymous {
+        block_id: BlockId,
+        argument: Option<(VarId, Value)>,
+    },
+}
+
 fn generate_build_plan<'a>(
     options: &Options,
     metadata: &'a BuildMetadata,
-) -> Result<Vec<&'a Task>> {
+) -> Result<Vec<RunTask<'a>>> {
     // NOTE metadata is assumed to have been validated
 
-    fn add_deps<'a>(task: &'a Task, tasks: &mut Vec<&'a Task>, metadata: &'a BuildMetadata) {
-        for dep in &task.depends {
-            let dep = &metadata.tasks[&dep.item];
-            if !tasks.contains(&dep) {
-                add_deps(dep, tasks, metadata);
+    fn add_deps<'a>(task: &'a Task, run_tasks: &mut Vec<RunTask<'a>>, metadata: &'a BuildMetadata) {
+        for dep in &task.dependencies {
+            match dep {
+                Dependency::Named(dep) => {
+                    let task = &metadata.tasks[&dep.item];
+                    if !run_tasks.contains(&RunTask::Task(task)) {
+                        add_deps(task, run_tasks, metadata);
+                    }
+                }
+                Dependency::Anonymous { block_id, argument } => {
+                    run_tasks.push(RunTask::Anonymous {
+                        block_id: *block_id,
+                        argument: argument.clone(),
+                    })
+                }
             }
         }
-        tasks.push(task);
+        run_tasks.push(RunTask::Task(task));
     }
 
     let root = metadata
@@ -315,10 +351,10 @@ fn generate_build_plan<'a>(
         .ok_or_else(|| errors::TaskNotFound {
             task: options.task.clone(),
         })?;
-    let mut tasks = vec![];
-    add_deps(root, &mut tasks, metadata);
+    let mut run_tasks = vec![];
+    add_deps(root, &mut run_tasks, metadata);
 
-    Ok(tasks)
+    Ok(run_tasks)
 }
 
 fn is_dirty(task: &Task) -> Result<bool> {

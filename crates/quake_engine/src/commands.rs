@@ -1,8 +1,8 @@
 use nu_engine::{eval_block, CallExt};
-use nu_protocol::engine::{Block, Command};
+use nu_protocol::engine::{Block, Closure, Command};
 use nu_protocol::{Category, PipelineData, ShellError, Signature, Spanned, SyntaxShape, Type};
 
-use crate::metadata::Task;
+use crate::metadata::{Dependency, Task};
 use crate::state::{Scope, State};
 
 const QUAKE_CATEGORY: &str = "quake";
@@ -83,6 +83,62 @@ impl Command for DefTask {
 }
 
 #[derive(Clone)]
+pub struct Subtask;
+
+impl Command for Subtask {
+    fn name(&self) -> &str {
+        "subtask"
+    }
+
+    fn usage(&self) -> &str {
+        "Define and depend upon an anonymous subtask"
+    }
+
+    fn signature(&self) -> nu_protocol::Signature {
+        Signature::build("subtask")
+            .input_output_types(vec![(Type::Any, Type::Nothing)])
+            .required(
+                "run_body",
+                SyntaxShape::Closure(Some(vec![SyntaxShape::Any])),
+                "run body",
+            )
+            .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
+    }
+
+    fn run(
+        &self,
+        engine_state: &nu_protocol::engine::EngineState,
+        stack: &mut nu_protocol::engine::Stack,
+        call: &nu_protocol::ast::Call,
+        input: nu_protocol::PipelineData,
+    ) -> Result<nu_protocol::PipelineData, nu_protocol::ShellError> {
+        let span = call.span();
+
+        let closure: Closure = call.req(engine_state, stack, 0)?;
+        let block = engine_state.get_block(closure.block_id);
+
+        let argument = block
+            .signature
+            .required_positional
+            .first()
+            .and_then(|arg| arg.var_id)
+            .map(|v| (v, input.into_value(span)));
+
+        let state = State::from_engine_state(engine_state).unwrap();
+        {
+            let mut state = state.lock().unwrap();
+            let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
+            task.dependencies.push(Dependency::Anonymous {
+                block_id: closure.block_id,
+                argument,
+            });
+        }
+
+        Ok(PipelineData::empty())
+    }
+}
+
+#[derive(Clone)]
 pub struct Depends;
 
 impl Command for Depends {
@@ -116,7 +172,7 @@ impl Command for Depends {
         {
             let mut state = state.lock().unwrap();
             let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
-            task.depends.push(dep);
+            task.dependencies.push(Dependency::Named(dep));
         }
 
         Ok(PipelineData::empty())

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use nu_protocol::{BlockId, Spanned};
+use nu_protocol::{BlockId, Spanned, Value, VarId};
 use serde::Serialize;
 
 use quake_core::prelude::*;
@@ -27,7 +27,7 @@ impl BuildMetadata {
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct Task {
     pub name: Spanned<String>,
-    pub depends: Vec<Spanned<String>>,
+    pub dependencies: Vec<Dependency>,
     pub sources: Vec<Spanned<String>>,
     pub artifacts: Vec<Spanned<String>>,
     pub run_block: Option<BlockId>,
@@ -37,10 +37,19 @@ impl Task {
     pub fn new(name: Spanned<String>, run_block: Option<BlockId>) -> Self {
         Task {
             name,
-            depends: Vec::new(),
+            dependencies: Vec::new(),
             sources: Vec::new(),
             artifacts: Vec::new(),
             run_block,
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub enum Dependency {
+    Named(Spanned<String>),
+    Anonymous {
+        block_id: BlockId,
+        argument: Option<(VarId, Value)>,
+    },
 }
