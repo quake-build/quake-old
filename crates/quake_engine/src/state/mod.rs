@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use miette::miette;
 use nu_protocol::engine::{EngineState, Stack};
 use nu_protocol::{CustomValue, ShellError, Span, Value};
 use quake_core::prelude::*;
@@ -134,13 +133,13 @@ fn get_state(engine_state: &EngineState) -> Result<Arc<Mutex<State>>> {
         }
     }
 
-    Err(miette!("Could not fetch internal state"))
+    panic!("Could not fetch internal state")
 }
 
 fn get_scope_id(stack: &Stack, span: Span) -> Result<ScopeId> {
     if let Value::Int { val, .. } = stack.get_var(QUAKE_SCOPE_VARIABLE_ID, span)? {
         val.try_into()
-            .map_err(|_| miette!("Invalid scope ID: {val}"))
+            .map_err(|_| panic!("Invalid scope ID: {val}"))
     } else {
         Err(errors::UndefinedScope { span }.into())
     }

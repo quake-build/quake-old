@@ -304,7 +304,7 @@ fn create_engine_state(state: Arc<Mutex<State>>) -> Result<EngineState> {
 
     engine_state
         .merge_delta(delta)
-        .map_err(|_| miette!("Failed to register custom engine state"))?;
+        .expect("Failed to register custom engine state");
 
     Ok(engine_state)
 }
