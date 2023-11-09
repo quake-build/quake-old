@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use miette::miette;
-use nu_protocol::engine::Stack;
+use nu_protocol::engine::{EngineState, Stack};
 use nu_protocol::{CustomValue, ShellError, Span, Value};
 use quake_core::prelude::*;
 use serde::Serialize;
@@ -28,8 +28,8 @@ impl State {
         }
     }
 
-    pub fn from_stack(stack: &Stack, span: Span) -> Result<Arc<Mutex<Self>>> {
-        get_state(stack, span)
+    pub fn from_engine_state(engine_state: &EngineState) -> Result<Arc<Mutex<Self>>> {
+        get_state(engine_state)
     }
 
     #[allow(dead_code)]
@@ -126,8 +126,9 @@ impl CustomValue for StateVariable {
     }
 }
 
-fn get_state(stack: &Stack, span: Span) -> Result<Arc<Mutex<State>>> {
-    if let Value::CustomValue { val, .. } = stack.get_var(QUAKE_VARIABLE_ID, span)? {
+fn get_state(engine_state: &EngineState) -> Result<Arc<Mutex<State>>> {
+    if let Some(Value::CustomValue { val, .. }) = &engine_state.get_var(QUAKE_VARIABLE_ID).const_val
+    {
         if let Some(state) = val.as_any().downcast_ref::<StateVariable>().cloned() {
             return Ok(state.0);
         }

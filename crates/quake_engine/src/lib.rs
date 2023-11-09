@@ -58,8 +58,8 @@ impl Engine {
 
         let build_state = Arc::new(Mutex::new(State::new()));
 
-        let engine_state = create_engine_state()?;
-        let stack = create_stack(build_state.clone(), project.project_root());
+        let engine_state = create_engine_state(build_state.clone())?;
+        let stack = create_stack(project.project_root());
 
         Ok(Self {
             project,
@@ -130,6 +130,14 @@ impl Engine {
                 set_last_exit_code(&mut self.stack, 1);
                 report_error(&working_set, err);
                 return false;
+            }
+
+            // add $quake_scope to the captures of all blocks
+            for block_id in 0..working_set.num_blocks() {
+                working_set
+                    .get_block_mut(block_id)
+                    .captures
+                    .push(QUAKE_SCOPE_VARIABLE_ID);
             }
 
             (output, working_set.render())
@@ -217,7 +225,7 @@ pub struct Options {
     pub quiet: bool,
 }
 
-fn create_engine_state() -> Result<EngineState> {
+fn create_engine_state(state: Arc<Mutex<State>>) -> Result<EngineState> {
     let mut engine_state = add_shell_command_context(create_default_context());
 
     // TODO merge with PWD logic below
@@ -240,6 +248,11 @@ fn create_engine_state() -> Result<EngineState> {
 
         bind_global_variable!("$quake", QUAKE_VARIABLE_ID, Type::Any);
         bind_global_variable!("$quake_scope", QUAKE_SCOPE_VARIABLE_ID, Type::Int);
+
+        working_set.set_variable_const_val(
+            QUAKE_VARIABLE_ID,
+            Value::custom_value(Box::new(StateVariable(state)), Span::unknown()),
+        );
 
         macro_rules! bind_command {
             ($($command:expr),* $(,)?) => {
@@ -264,7 +277,7 @@ fn create_engine_state() -> Result<EngineState> {
     Ok(engine_state)
 }
 
-fn create_stack(state: Arc<Mutex<State>>, cwd: impl AsRef<Path>) -> Stack {
+fn create_stack(cwd: impl AsRef<Path>) -> Stack {
     let mut stack = Stack::new();
 
     stack.add_env_var(
@@ -273,11 +286,6 @@ fn create_stack(state: Arc<Mutex<State>>, cwd: impl AsRef<Path>) -> Stack {
             val: cwd.as_ref().to_string_lossy().to_string(),
             internal_span: Span::unknown(),
         },
-    );
-
-    stack.add_var(
-        QUAKE_VARIABLE_ID,
-        Value::custom_value(Box::new(StateVariable(state)), Span::unknown()),
     );
 
     stack.add_var(QUAKE_SCOPE_VARIABLE_ID, Value::int(-1, Span::unknown()));

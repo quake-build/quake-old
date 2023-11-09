@@ -54,7 +54,7 @@ impl Command for DefTask {
             (Some(block_0), None)
         };
 
-        let state = State::from_stack(stack, call.span()).unwrap();
+        let state = State::from_engine_state(engine_state).unwrap();
 
         let task = Task::new(name, run_block.map(|b| b.block_id));
         if let Some(block) = &decl_block {
@@ -112,7 +112,7 @@ impl Command for Depends {
 
         let dep: Spanned<String> = call.req(engine_state, stack, 0)?;
 
-        let state = State::from_stack(stack, span).unwrap();
+        let state = State::from_engine_state(engine_state).unwrap();
         {
             let mut state = state.lock().unwrap();
             let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
@@ -157,7 +157,7 @@ impl Command for Sources {
 
         let values: Vec<Spanned<String>> = call.req(engine_state, stack, 0)?;
 
-        let state = State::from_stack(stack, span).unwrap();
+        let state = State::from_engine_state(engine_state).unwrap();
         {
             let mut state = state.lock().unwrap();
             let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
@@ -202,7 +202,7 @@ impl Command for Produces {
 
         let values: Vec<Spanned<String>> = call.req(engine_state, stack, 0)?;
 
-        let state = State::from_stack(stack, span).unwrap();
+        let state = State::from_engine_state(engine_state).unwrap();
         {
             let mut state = state.lock().unwrap();
             let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
