@@ -49,6 +49,7 @@ pub struct Engine {
     internal_state: Arc<Mutex<State>>,
     engine_state: EngineState,
     stack: Stack,
+    is_loaded: bool,
 }
 
 impl Engine {
@@ -67,6 +68,7 @@ impl Engine {
             internal_state: build_state,
             engine_state,
             stack,
+            is_loaded: false,
         })
     }
 
@@ -74,8 +76,8 @@ impl Engine {
         &self.project
     }
 
-    pub fn run(&mut self) -> Result<bool> {
-        // load and evaluate the build script
+    pub fn load(&mut self) -> Result<bool> {
+        assert!(!self.is_loaded, "build script should only be loaded once");
 
         let build_script = self.project.build_script();
         let filename = build_script
@@ -92,12 +94,26 @@ impl Engine {
             return Ok(false);
         }
 
-        // retrive and validate the parsed results
-        let metadata = self.internal_state.lock().unwrap().metadata.clone();
-        metadata.validate()?;
+        // validate the parsed results
+        self.internal_state.lock().unwrap().metadata.validate()?;
+
+        self.is_loaded = true;
+
+        Ok(true)
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        self.is_loaded
+    }
+
+    pub fn run(&mut self, task: &str) -> Result<bool> {
+        if !self.is_loaded {
+            self.load()?;
+        }
 
         // determine a build plan (i.e. the order in which to evaluate dependencies)
-        let build_plan = generate_build_plan(&self.options, &metadata)?;
+        let metadata = self.internal_state.lock().unwrap().metadata.clone();
+        let build_plan = generate_build_plan(task, &metadata)?;
 
         // run all tasks in the proper order
         for run_task in build_plan {
@@ -132,7 +148,7 @@ impl Engine {
             }
         }
 
-        self.print_action("Finished", &self.options.task);
+        self.print_action("Finished", task);
 
         Ok(true)
     }
@@ -237,7 +253,6 @@ impl Engine {
 
 #[derive(Debug, Clone)]
 pub struct Options {
-    pub task: String,
     pub quiet: bool,
 }
 
@@ -319,10 +334,7 @@ enum RunTask<'a> {
     },
 }
 
-fn generate_build_plan<'a>(
-    options: &Options,
-    metadata: &'a BuildMetadata,
-) -> Result<Vec<RunTask<'a>>> {
+fn generate_build_plan<'a>(task: &str, metadata: &'a BuildMetadata) -> Result<Vec<RunTask<'a>>> {
     // NOTE metadata is assumed to have been validated
 
     fn add_deps<'a>(task: &'a Task, run_tasks: &mut Vec<RunTask<'a>>, metadata: &'a BuildMetadata) {
@@ -347,9 +359,9 @@ fn generate_build_plan<'a>(
 
     let root = metadata
         .tasks
-        .get(&options.task)
+        .get(task)
         .ok_or_else(|| errors::TaskNotFound {
-            task: options.task.clone(),
+            task: task.to_owned(),
         })?;
     let mut run_tasks = vec![];
     add_deps(root, &mut run_tasks, metadata);

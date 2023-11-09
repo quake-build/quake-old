@@ -173,12 +173,12 @@ fn main() -> Result<()> {
     };
 
     let options = {
-        let task = matches.get_one::<String>("task").unwrap().clone();
         let quiet = matches.get_flag("quiet");
-        Options { task, quiet }
+        Options { quiet }
     };
 
-    Engine::new(project, options)?.run()?;
+    let task = matches.get_one::<String>("task").unwrap().clone();
+    Engine::new(project, options)?.run(&task)?;
 
     Ok(())
 }
