@@ -1,0 +1,11 @@
+def-task build {
+    cargo build
+}
+
+def-task run {
+    cargo run
+}
+
+def-task clean {
+    cargo clean
+}

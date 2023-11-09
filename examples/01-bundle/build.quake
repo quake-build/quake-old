@@ -1,0 +1,24 @@
+if (which pandoc | is-empty) {
+    error make {msg: "pandoc must be installed"}
+}
+
+def-task compile {
+    cargo build
+}
+
+def-task render-docs {
+    sources ["in.md"]
+    produces ["out.html"]
+} {
+    pandoc --quiet -s -o out.html in.md
+}
+
+def-task -i bundle {
+    depends compile
+    depends render-docs
+}
+
+def-task clean {
+    cargo clean
+    rm -f out.html
+}

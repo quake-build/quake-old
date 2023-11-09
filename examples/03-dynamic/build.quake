@@ -1,0 +1,17 @@
+def rust-package [package: string] {
+    # determine sources and artifacts from something like cargo metadata
+    # ...
+
+    # define and depend upon an anonymous task that actually builds the package
+    $package | subtask {|p|
+        cargo build --package $p
+    }
+}
+
+def-task -i build {
+    rust-package my-package
+}
+
+def-task clean {
+    cargo clean
+}
