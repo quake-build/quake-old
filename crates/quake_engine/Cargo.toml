@@ -8,7 +8,7 @@ quake_core = { path = "../quake_core" }
 
 miette = "5.10.0"
 nu-cmd-lang = "0.86.0"
-nu-command = "0.86.0"
+nu-command = { version = "0.86.0", features = ["which-support"] }
 nu-engine = "0.86.0"
 nu-parser = "0.86.0"
 nu-path = "0.86.0"
