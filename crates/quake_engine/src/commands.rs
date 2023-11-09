@@ -1,5 +1,6 @@
 use nu_engine::{eval_block, CallExt};
-use nu_protocol::engine::{Block, Closure, Command};
+use nu_protocol::ast::Call;
+use nu_protocol::engine::{Block, Closure, Command, EngineState, Stack};
 use nu_protocol::{Category, PipelineData, ShellError, Signature, Spanned, SyntaxShape, Type};
 
 use crate::metadata::{Dependency, Task};
@@ -19,7 +20,7 @@ impl Command for DefTask {
         "Define a quake task"
     }
 
-    fn signature(&self) -> nu_protocol::Signature {
+    fn signature(&self) -> Signature {
         Signature::build("def-task")
             .input_output_types(vec![(Type::Nothing, Type::Nothing)])
             .required("def_name", SyntaxShape::String, "task name")
@@ -35,11 +36,11 @@ impl Command for DefTask {
 
     fn run(
         &self,
-        engine_state: &nu_protocol::engine::EngineState,
-        stack: &mut nu_protocol::engine::Stack,
-        call: &nu_protocol::ast::Call,
-        input: nu_protocol::PipelineData,
-    ) -> Result<nu_protocol::PipelineData, nu_protocol::ShellError> {
+        engine_state: &EngineState,
+        stack: &mut Stack,
+        call: &Call,
+        input: PipelineData,
+    ) -> Result<PipelineData, ShellError> {
         let name: Spanned<String> = call.req(engine_state, stack, 0)?;
 
         let invisible = call.has_flag("invisible");
@@ -94,7 +95,7 @@ impl Command for Subtask {
         "Define and depend upon an anonymous subtask"
     }
 
-    fn signature(&self) -> nu_protocol::Signature {
+    fn signature(&self) -> Signature {
         Signature::build("subtask")
             .input_output_types(vec![(Type::Any, Type::Nothing)])
             .required(
@@ -107,11 +108,11 @@ impl Command for Subtask {
 
     fn run(
         &self,
-        engine_state: &nu_protocol::engine::EngineState,
-        stack: &mut nu_protocol::engine::Stack,
-        call: &nu_protocol::ast::Call,
-        input: nu_protocol::PipelineData,
-    ) -> Result<nu_protocol::PipelineData, nu_protocol::ShellError> {
+        engine_state: &EngineState,
+        stack: &mut Stack,
+        call: &Call,
+        input: PipelineData,
+    ) -> Result<PipelineData, ShellError> {
         let span = call.span();
 
         let closure: Closure = call.req(engine_state, stack, 0)?;
@@ -159,9 +160,9 @@ impl Command for Depends {
 
     fn run(
         &self,
-        engine_state: &nu_protocol::engine::EngineState,
-        stack: &mut nu_protocol::engine::Stack,
-        call: &nu_protocol::ast::Call,
+        engine_state: &EngineState,
+        stack: &mut Stack,
+        call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
         let span = call.span();
@@ -204,9 +205,9 @@ impl Command for Sources {
 
     fn run(
         &self,
-        engine_state: &nu_protocol::engine::EngineState,
-        stack: &mut nu_protocol::engine::Stack,
-        call: &nu_protocol::ast::Call,
+        engine_state: &EngineState,
+        stack: &mut Stack,
+        call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
         let span = call.span();
@@ -249,9 +250,9 @@ impl Command for Produces {
 
     fn run(
         &self,
-        engine_state: &nu_protocol::engine::EngineState,
-        stack: &mut nu_protocol::engine::Stack,
-        call: &nu_protocol::ast::Call,
+        engine_state: &EngineState,
+        stack: &mut Stack,
+        call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
         let span = call.span();
