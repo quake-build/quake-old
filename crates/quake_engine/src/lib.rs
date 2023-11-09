@@ -1,8 +1,9 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use glob::glob;
 use nu_ansi_term::{Color, Style};
 use nu_cli::gather_parent_env_vars;
 use nu_cmd_lang::create_default_context;
@@ -12,7 +13,8 @@ use nu_parser::parse;
 use nu_protocol::ast::Block;
 use nu_protocol::engine::{EngineState, Stack, StateWorkingSet, PWD_ENV};
 use nu_protocol::{
-    print_if_stream, report_error, report_error_new, PipelineData, Span, Type, Value, VarId,
+    print_if_stream, report_error, report_error_new, PipelineData, Span, Spanned, Type, Value,
+    VarId,
 };
 
 use quake_core::prelude::*;
@@ -99,11 +101,8 @@ impl Engine {
 
         // run all tasks in the proper order
         for task in build_plan {
-            let sources = task.sources.iter().map(|s| &s.item).collect::<Vec<_>>();
-            let artifacts = task.sources.iter().map(|s| &s.item).collect::<Vec<_>>();
-
             // perform a dirty check only if both sources and artifacts are defined
-            if !is_dirty(&sources, &artifacts)? {
+            if !is_dirty(task)? {
                 self.print_action("Skipping", &task.name.item);
                 continue;
             }
@@ -313,15 +312,38 @@ fn generate_build_plan<'a>(
     Ok(tasks)
 }
 
-fn is_dirty(sources: &[&String], artifacts: &[&String]) -> Result<bool> {
-    if sources.is_empty() || artifacts.is_empty() {
+fn is_dirty(task: &Task) -> Result<bool> {
+    // if either is undefined, assume dirty
+    if task.sources.is_empty() || task.artifacts.is_empty() {
         return Ok(true);
     }
 
-    Ok(latest_timestamp(sources)?.unwrap() > latest_timestamp(artifacts)?.unwrap())
+    // TODO glob from PWD?
+
+    let (sources, artifacts) = (expand_globs(&task.sources)?, expand_globs(&task.artifacts)?);
+
+    Ok(latest_timestamp(&sources)? > latest_timestamp(&artifacts)?)
 }
 
-fn latest_timestamp(paths: &[&String]) -> Result<Option<SystemTime>> {
+fn expand_globs(patterns: &[Spanned<String>]) -> Result<Vec<PathBuf>> {
+    let mut paths = vec![];
+
+    for ps in patterns
+        .iter()
+        .map(|s| glob(&s.item).into_diagnostic())
+        .collect::<Result<Vec<_>>>()?
+    {
+        paths.extend(
+            ps.into_iter()
+                .map(IntoDiagnostic::into_diagnostic)
+                .collect::<Result<Vec<_>>>()?,
+        );
+    }
+
+    Ok(paths)
+}
+
+fn latest_timestamp(paths: &[PathBuf]) -> Result<Option<SystemTime>> {
     let timestamps = paths
         .iter()
         .map(Path::new)

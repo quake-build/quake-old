@@ -2042,6 +2042,7 @@ dependencies = [
 name = "quake_engine"
 version = "0.1.0"
 dependencies = [
+ "glob",
  "miette",
  "nu-ansi-term",
  "nu-cli",
