@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::prelude::*;
+use crate::BUILD_SCRIPT_NAMES;
 
 #[derive(Clone)]
 pub struct Project {
@@ -14,11 +15,11 @@ impl Project {
             return Err(errors::ProjectNotFound.into());
         }
 
-        let build_script = project_root.join("build.quake");
-
-        if !build_script.is_file() {
-            return Err(errors::BuildScriptNotFound.into());
-        }
+        let build_script = BUILD_SCRIPT_NAMES
+            .iter()
+            .map(|n| project_root.join(n))
+            .find(|p| p.exists())
+            .ok_or(errors::BuildScriptNotFound)?;
 
         Ok(Self {
             project_root,
