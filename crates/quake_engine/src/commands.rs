@@ -25,6 +25,11 @@ impl Command for DefTask {
             .required("def_name", SyntaxShape::String, "task name")
             .optional("decl_body", SyntaxShape::Block, "declarational body")
             .required("run_body", SyntaxShape::Block, "run body")
+            .switch(
+                "invisible",
+                "make this an \"invisible\" task with no run body",
+                Some('i'),
+            )
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
 
@@ -37,15 +42,21 @@ impl Command for DefTask {
     ) -> Result<nu_protocol::PipelineData, nu_protocol::ShellError> {
         let name: Spanned<String> = call.req(engine_state, stack, 0)?;
 
+        let invisible = call.has_flag("invisible");
+
         let block_0: Block = call.req(engine_state, stack, 1)?;
-        let (decl_block, run_block) = match call.opt(engine_state, stack, 2)? {
-            Some(block_1) => (Some(block_0), block_1),
-            None => (None, block_0),
+        let (decl_block, run_block) = if !invisible {
+            match call.opt(engine_state, stack, 2)? {
+                Some(block_1) => (Some(block_0), Some(block_1)),
+                None => (None, Some(block_0)),
+            }
+        } else {
+            (Some(block_0), None)
         };
 
         let state = State::from_stack(stack, call.span()).unwrap();
 
-        let task = Task::new(name, run_block.block_id);
+        let task = Task::new(name, run_block.map(|b| b.block_id));
         if let Some(block) = &decl_block {
             state
                 .lock()

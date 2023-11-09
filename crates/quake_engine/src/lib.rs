@@ -107,11 +107,12 @@ impl Engine {
                 continue;
             }
 
-            self.print_action("Running", &task.name.item);
-
-            let block = self.engine_state.get_block(task.run_block).clone();
-            if !self.eval_block(&block) {
-                break;
+            if let Some(run_block) = task.run_block {
+                self.print_action("Running", &task.name.item);
+                let block = self.engine_state.get_block(run_block).clone();
+                if !self.eval_block(&block) {
+                    break;
+                }
             }
         }
 

@@ -30,11 +30,11 @@ pub struct Task {
     pub depends: Vec<Spanned<String>>,
     pub sources: Vec<Spanned<String>>,
     pub artifacts: Vec<Spanned<String>>,
-    pub run_block: BlockId,
+    pub run_block: Option<BlockId>,
 }
 
 impl Task {
-    pub fn new(name: Spanned<String>, run_block: BlockId) -> Self {
+    pub fn new(name: Spanned<String>, run_block: Option<BlockId>) -> Self {
         Task {
             name,
             depends: Vec::new(),
