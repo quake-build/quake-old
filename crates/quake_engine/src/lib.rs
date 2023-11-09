@@ -1,29 +1,60 @@
 use std::fs;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
+use nu_cmd_lang::create_default_context;
+use nu_command::add_shell_command_context;
 use nu_engine::eval_block;
 use nu_parser::parse;
-use nu_protocol::engine::{EngineState, Stack, StateWorkingSet};
-use nu_protocol::{print_if_stream, report_error, report_error_new, PipelineData};
+use nu_protocol::ast::Block;
+use nu_protocol::engine::{EngineState, Stack, StateWorkingSet, PWD_ENV};
+use nu_protocol::{
+    print_if_stream, report_error, report_error_new, PipelineData, Span, Type, Value, VarId,
+};
 
 use quake_core::prelude::*;
+
+use crate::metadata::{BuildMetadata, Task};
+use crate::state::{State, StateVariable};
+
+mod commands;
+mod metadata;
+mod state;
 
 mod helpers;
 pub use helpers::*;
 
+/// The ID of the `$quake` variable, which holds the internal state of the
+/// program.
+///
+/// The value of this constant is the next available variable ID after the first
+/// five that are reserved by nushell. If for some reason this should change in
+/// the future, this discrepancy should be noticed by an assertion following the
+/// registration of the variable into the working set.
+pub const QUAKE_VARIABLE_ID: VarId = 5;
+
+/// The ID of the `$quake_scope` variable, which is set inside evaluated blocks
+/// in order to retrieve scoped state from the global state.
+pub const QUAKE_SCOPE_VARIABLE_ID: VarId = 6;
+
 #[derive(Clone)]
 pub struct Engine {
     project: Project,
+    internal_state: Arc<Mutex<State>>,
     engine_state: EngineState,
     stack: Stack,
 }
 
 impl Engine {
     pub fn new(project: Project) -> Result<Self> {
-        let engine_state = create_engine_state();
-        let stack = create_stack(project.project_root());
+        let build_state = Arc::new(Mutex::new(State::new()));
+
+        let engine_state = create_engine_state()?;
+        let stack = create_stack(build_state.clone(), project.project_root());
 
         Ok(Self {
             project,
+            internal_state: build_state,
             engine_state,
             stack,
         })
@@ -33,16 +64,48 @@ impl Engine {
         &self.project
     }
 
-    pub fn run(&mut self) -> Result<bool> {
-        let source = fs::read_to_string(self.project.build_script())
+    pub fn run(&mut self, options: RunOptions) -> Result<bool> {
+        // load and evaluate the build script
+
+        let build_script = self.project.build_script();
+        let filename = build_script
+            .strip_prefix(self.project.project_root())
+            .unwrap_or(build_script)
+            .to_string_lossy()
+            .to_string();
+
+        let source = fs::read_to_string(build_script)
             .into_diagnostic()
-            .wrap_err("Failed to read build script")?;
-        Ok(self.eval_source(source.as_bytes(), "build.quake"))
+            .wrap_err_with(|| format!("Failed to read build script `{filename}`"))?;
+
+        if !self.eval_source(source.as_bytes(), &filename) {
+            return Ok(false);
+        }
+
+        // retrive and validate the parsed results
+        let metadata = self.internal_state.lock().unwrap().metadata.clone();
+        metadata.validate()?;
+
+        // determine a build plan (i.e. the order in which to evaluate dependencies)
+        let build_plan = generate_build_plan(&options, &metadata)?;
+
+        eprintln!("{:#?}", build_plan);
+
+        // run all tasks in the proper order
+        for task in build_plan {
+            let block = self.engine_state.get_block(task.run_block).clone();
+            if !self.eval_block(&block) {
+                break;
+            }
+        }
+
+        Ok(true)
     }
 
     fn eval_source(&mut self, source: &[u8], filename: &str) -> bool {
         let (block, delta) = {
             let mut working_set = StateWorkingSet::new(&self.engine_state);
+
             let output = parse(&mut working_set, Some(filename), source, false);
             if let Some(err) = working_set.parse_errors.first() {
                 set_last_exit_code(&mut self.stack, 1);
@@ -59,10 +122,14 @@ impl Engine {
             return false;
         }
 
+        self.eval_block(&block)
+    }
+
+    fn eval_block(&mut self, block: &Block) -> bool {
         let result = eval_block(
             &self.engine_state,
             &mut self.stack,
-            &block,
+            block,
             PipelineData::Empty,
             false,
             false,
@@ -105,6 +172,105 @@ impl Engine {
                 return false;
             }
         }
+
         true
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct RunOptions {
+    pub task: String,
+}
+
+fn create_engine_state() -> Result<EngineState> {
+    let mut engine_state = add_shell_command_context(create_default_context());
+
+    let delta = {
+        use crate::commands::*;
+
+        let mut working_set = StateWorkingSet::new(&engine_state);
+
+        macro_rules! bind_global_variable {
+            ($name:expr, $id:expr, $type:expr) => {
+                let var_id = working_set.add_variable($name.into(), Span::unknown(), $type, false);
+                assert_eq!(
+                    var_id, $id,
+                    concat!("ID variable of `", $name, "` did not match predicted value")
+                );
+            };
+        }
+
+        bind_global_variable!("$quake", QUAKE_VARIABLE_ID, Type::Any);
+        bind_global_variable!("$quake_scope", QUAKE_SCOPE_VARIABLE_ID, Type::Int);
+
+        macro_rules! bind_command {
+            ($($command:expr),* $(,)?) => {
+                $(working_set.add_decl(Box::new($command));)*
+            };
+        }
+
+        bind_command! {
+            DefTask,
+            Depends,
+            Sources,
+            Produces
+        };
+
+        working_set.render()
+    };
+
+    engine_state
+        .merge_delta(delta)
+        .map_err(|_| miette!("Failed to register custom engine state"))?;
+
+    Ok(engine_state)
+}
+
+fn create_stack(state: Arc<Mutex<State>>, cwd: impl AsRef<Path>) -> Stack {
+    let mut stack = Stack::new();
+
+    stack.add_env_var(
+        PWD_ENV.to_owned(),
+        Value::String {
+            val: cwd.as_ref().to_string_lossy().to_string(),
+            internal_span: Span::unknown(),
+        },
+    );
+
+    stack.add_var(
+        QUAKE_VARIABLE_ID,
+        Value::custom_value(Box::new(StateVariable(state)), Span::unknown()),
+    );
+
+    stack.add_var(QUAKE_SCOPE_VARIABLE_ID, Value::int(-1, Span::unknown()));
+
+    stack
+}
+
+fn generate_build_plan<'a>(
+    options: &RunOptions,
+    metadata: &'a BuildMetadata,
+) -> Result<Vec<&'a Task>> {
+    // NOTE metadata is assumed to have been validated
+
+    fn add_deps<'a>(task: &'a Task, tasks: &mut Vec<&'a Task>, metadata: &'a BuildMetadata) {
+        for dep in &task.depends {
+            let dep = &metadata.tasks[&dep.item];
+            if !tasks.contains(&dep) {
+                add_deps(dep, tasks, metadata);
+            }
+        }
+        tasks.push(task);
+    }
+
+    let root = metadata
+        .tasks
+        .get(&options.task)
+        .ok_or_else(|| errors::TaskNotFound {
+            task: options.task.clone(),
+        })?;
+    let mut tasks = vec![];
+    add_deps(root, &mut tasks, metadata);
+
+    Ok(tasks)
 }

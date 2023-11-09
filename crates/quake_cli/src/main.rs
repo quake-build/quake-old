@@ -25,7 +25,7 @@ fn main() -> Result<()> {
             .color(ColorChoice::Never)
             .max_term_width(100)
             .override_usage(
-                "quake [OPTIONS] <TASK>...\n       \
+                "quake [OPTIONS] <TASK>\n       \
                  quake [OPTIONS] <SUBCOMMAND>",
             )
             .arg_required_else_help(true)
@@ -35,10 +35,8 @@ fn main() -> Result<()> {
             .arg(
                 Arg::new("task")
                     .value_name("TASK")
-                    .action(ArgAction::Append)
                     .required(true)
-                    .num_args(1..)
-                    .help("The tasks to run, in the form [SUBPROJECT]:<TASK>"),
+                    .help("The task to run, in the form [SUBPROJECT]:<TASK>"),
             )
             .subcommand_help_heading("Subcommands")
             .subcommands([
@@ -171,9 +169,14 @@ fn main() -> Result<()> {
         .or_else(get_init_cwd)
         .ok_or(errors::ProjectNotFound)?;
 
+    let task = matches.get_one::<String>("task").unwrap().clone();
+
     let project = Project::new(project_root)?;
     let mut engine = Engine::new(project)?;
-    engine.run()?;
+
+    let options = RunOptions { task };
+
+    engine.run(options)?;
 
     Ok(())
 }
