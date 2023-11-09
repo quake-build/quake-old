@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
+use nu_cli::gather_parent_env_vars;
 use nu_cmd_lang::create_default_context;
 use nu_command::add_shell_command_context;
 use nu_engine::eval_block;
@@ -89,10 +91,16 @@ impl Engine {
         // determine a build plan (i.e. the order in which to evaluate dependencies)
         let build_plan = generate_build_plan(&options, &metadata)?;
 
-        eprintln!("{:#?}", build_plan);
-
         // run all tasks in the proper order
         for task in build_plan {
+            let sources = task.sources.iter().map(|s| &s.item).collect::<Vec<_>>();
+            let artifacts = task.sources.iter().map(|s| &s.item).collect::<Vec<_>>();
+
+            // perform a dirty check only if both sources and artifacts are defined
+            if !is_dirty(&sources, &artifacts)? {
+                continue;
+            }
+
             let block = self.engine_state.get_block(task.run_block).clone();
             if !self.eval_block(&block) {
                 break;
@@ -185,6 +193,9 @@ pub struct RunOptions {
 fn create_engine_state() -> Result<EngineState> {
     let mut engine_state = add_shell_command_context(create_default_context());
 
+    // TODO merge with PWD logic below
+    gather_parent_env_vars(&mut engine_state, Path::new("."));
+
     let delta = {
         use crate::commands::*;
 
@@ -273,4 +284,22 @@ fn generate_build_plan<'a>(
     add_deps(root, &mut tasks, metadata);
 
     Ok(tasks)
+}
+
+fn is_dirty(sources: &[&String], artifacts: &[&String]) -> Result<bool> {
+    if sources.is_empty() || artifacts.is_empty() {
+        return Ok(true);
+    }
+
+    Ok(latest_timestamp(sources)?.unwrap() > latest_timestamp(artifacts)?.unwrap())
+}
+
+fn latest_timestamp(paths: &[&String]) -> Result<Option<SystemTime>> {
+    let timestamps = paths
+        .iter()
+        .map(Path::new)
+        .filter(|p| p.exists())
+        .map(|s| fs::metadata(s).and_then(|m| m.modified()).into_diagnostic())
+        .collect::<Result<Vec<_>>>()?;
+    Ok(timestamps.into_iter().max())
 }

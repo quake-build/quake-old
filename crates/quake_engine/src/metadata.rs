@@ -19,6 +19,7 @@ impl BuildMetadata {
 
     pub fn validate(&self) -> Result<()> {
         // TODO check that the dependency graph makes sense
+        // TODO validate that all tasks have both sources and artifacts, or none at all
         Ok(())
     }
 }
@@ -28,7 +29,7 @@ pub struct Task {
     pub name: Spanned<String>,
     pub depends: Vec<Spanned<String>>,
     pub sources: Vec<Spanned<String>>,
-    pub produces: Vec<Spanned<String>>,
+    pub artifacts: Vec<Spanned<String>>,
     pub run_block: BlockId,
 }
 
@@ -38,7 +39,7 @@ impl Task {
             name,
             depends: Vec::new(),
             sources: Vec::new(),
-            produces: Vec::new(),
+            artifacts: Vec::new(),
             run_block,
         }
     }

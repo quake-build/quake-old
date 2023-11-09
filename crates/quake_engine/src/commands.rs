@@ -195,7 +195,7 @@ impl Command for Produces {
         {
             let mut state = state.lock().unwrap();
             let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
-            task.produces.extend(values);
+            task.artifacts.extend(values);
         }
 
         Ok(PipelineData::empty())
