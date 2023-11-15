@@ -89,7 +89,9 @@ def-task build {
 ### Custom functions, subtasks
 
 With larger projects, it can be really useful to write common functions to generate tasks automatically.
-Here's an example of that:
+We can do this two separate ways.
+
+First, by invoking `def-task` inside of a function:
 
 ``` nu
 def-task check-rust-install {
@@ -97,12 +99,29 @@ def-task check-rust-install {
     # ...
 }
 
-# this is just a normal nushell function
+def rust-package [package: string] {
+    let task_name = "build-" + ($package | str replace -a "_" "-")
+
+    def-task $task_name {
+        depends check-rust-install
+    } {
+        cargo build $package
+    }
+}
+
+rust-package my-package
+```
+
+Or second, by delegating the declaration work to a function:
+
+``` nu
+def-task check-rust-install {
+    # ensure that a sufficient rust toolchain is installed
+    # ...
+}
+
 def rust-package [package: string] {
     depends check-rust-install
-
-    # maybe determine sources and artifacts from something like cargo metadata
-    # ...
 
     # define and depend upon an anonymous task that actually builds the package
     $package | subtask {|p|
@@ -110,15 +129,13 @@ def rust-package [package: string] {
     }
 }
 
-def-task -0 build {
+def-task -0 build-my-package {
     rust-package my-package
 }
 ```
 
-When the `rust-package` function is invoked inside the `build` task's declaration body, its "task scope" is carried with it, so we can use commands like `depends`, `sources`, `produces`, and the new `subtask` command shown above.
+In the second example, when the `rust-package` function is invoked inside the `build` task's declaration body, its "task scope" is carried with it, so we can use commands like `depends`, `sources`, `produces`, and the new `subtask` command shown above.
 This allows us to create language-specific toolchains that others can depend upon in their project to make it very easy to get up and running quickly with minimal boilerplate.
-
-We could also easily write the above example with a `def-task` inside of the `rust-package` function itself if we wanted, but this example does a pretty good job of showcasing where subtasks might be useful.
 
 ## Motivation
 
