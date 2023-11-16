@@ -76,8 +76,14 @@ impl Serialize for State {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) enum Scope {
-    TaskDecl(Task),
+pub(crate) struct Scope {
+    pub task: Task,
+}
+
+impl Scope {
+    pub fn new(task: Task) -> Self {
+        Scope { task }
+    }
 }
 
 #[derive(Clone, Debug)]

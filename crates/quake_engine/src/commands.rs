@@ -62,13 +62,13 @@ impl Command for DefTask {
             state
                 .lock()
                 .unwrap()
-                .push_scope(Scope::TaskDecl(task), stack, call.span());
+                .push_scope(Scope::new(task), stack, call.span());
 
             let block = engine_state.get_block(block.block_id);
             eval_block(engine_state, stack, block, input, false, false)?;
 
             let mut state = state.lock().unwrap();
-            let Scope::TaskDecl(task) = state.pop_scope(stack, call.span()).unwrap(); // TODO handle scope mismatch
+            let task = state.pop_scope(stack, call.span()).unwrap().task; // TODO handle error
             state.metadata.tasks.insert(task.name.item.clone(), task);
         } else {
             state
@@ -128,7 +128,7 @@ impl Command for Subtask {
         let state = State::from_engine_state(engine_state).unwrap();
         {
             let mut state = state.lock().unwrap();
-            let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
+            let task = &mut state.get_scope_mut(stack, span).unwrap().task; // TODO handle error
             task.dependencies.push(Dependency::Anonymous {
                 parent: task.name.clone(),
                 block_id: closure.block_id,
@@ -173,8 +173,12 @@ impl Command for Depends {
         let state = State::from_engine_state(engine_state).unwrap();
         {
             let mut state = state.lock().unwrap();
-            let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
-            task.dependencies.push(Dependency::Named(dep));
+            state
+                .get_scope_mut(stack, span)
+                .unwrap() // TODO handle error
+                .task
+                .dependencies
+                .push(Dependency::Named(dep));
         }
 
         Ok(PipelineData::empty())
@@ -218,8 +222,12 @@ impl Command for Sources {
         let state = State::from_engine_state(engine_state).unwrap();
         {
             let mut state = state.lock().unwrap();
-            let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
-            task.sources.extend(values);
+            state
+                .get_scope_mut(stack, span)
+                .unwrap() // TODO handle error
+                .task
+                .sources
+                .extend(values);
         }
 
         Ok(PipelineData::empty())
@@ -263,8 +271,12 @@ impl Command for Produces {
         let state = State::from_engine_state(engine_state).unwrap();
         {
             let mut state = state.lock().unwrap();
-            let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
-            task.artifacts.extend(values);
+            state
+                .get_scope_mut(stack, span)
+                .unwrap() // TODO handle error
+                .task
+                .artifacts
+                .extend(values);
         }
 
         Ok(PipelineData::empty())
