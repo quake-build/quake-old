@@ -125,25 +125,32 @@ impl Engine {
                 }
             }
 
-            let run_block = match run_task {
+            let run_block = match &run_task {
                 RunTask::Task(task) => {
                     if task.run_block.is_some() {
                         self.print_action("Running", &task.name.item);
                     }
                     task.run_block
                 }
-                RunTask::Anonymous { block_id, argument } => {
+                RunTask::Anonymous {
+                    block_id, argument, ..
+                } => {
                     if let Some(var) = argument {
-                        self.stack.vars.push(var);
+                        self.stack.vars.push(var.clone());
                     }
-                    Some(block_id)
+                    Some(*block_id)
                 }
             };
 
             if let Some(run_block) = run_block {
                 let block = self.engine_state.get_block(run_block).clone();
                 if !self.eval_block(&block) {
-                    break;
+                    let task_name = match run_task {
+                        RunTask::Task(task) => task.name.item.clone(),
+                        RunTask::Anonymous { parent, .. } => parent.item,
+                    };
+                    self.print_error("Failed", &task_name);
+                    return Ok(false);
                 }
             }
         }
@@ -216,6 +223,9 @@ impl Engine {
                     }
                     Ok(exit_code) => {
                         set_last_exit_code(&mut self.stack, exit_code);
+                        if exit_code != 0 {
+                            return false;
+                        }
                     }
                 }
 
@@ -236,15 +246,23 @@ impl Engine {
     }
 
     fn print_action(&self, action: &str, message: &str) {
-        const MAX_ACTION_LENGTH: usize = 11;
+        self.print_message(action, message, Color::Cyan);
+    }
+
+    fn print_error(&self, action: &str, message: &str) {
+        self.print_message(action, message, Color::LightRed);
+    }
+
+    fn print_message(&self, prefix: &str, message: &str, color: Color) {
+        const MAX_ACTION_LENGTH: usize = 12;
 
         if !self.options.quiet {
             eprintln!(
                 "{} {}",
                 Style::new()
                     .bold()
-                    .fg(Color::Cyan)
-                    .paint(format!("{action:>MAX_ACTION_LENGTH$}")),
+                    .fg(color)
+                    .paint(format!("{prefix:>MAX_ACTION_LENGTH$}")),
                 message
             );
         }
@@ -329,6 +347,7 @@ fn create_stack(cwd: impl AsRef<Path>) -> Stack {
 enum RunTask<'a> {
     Task(&'a Task),
     Anonymous {
+        parent: Spanned<String>,
         block_id: BlockId,
         argument: Option<(VarId, Value)>,
     },
@@ -346,12 +365,15 @@ fn generate_build_plan<'a>(task: &str, metadata: &'a BuildMetadata) -> Result<Ve
                         add_deps(task, run_tasks, metadata);
                     }
                 }
-                Dependency::Anonymous { block_id, argument } => {
-                    run_tasks.push(RunTask::Anonymous {
-                        block_id: *block_id,
-                        argument: argument.clone(),
-                    })
-                }
+                Dependency::Anonymous {
+                    parent,
+                    block_id,
+                    argument,
+                } => run_tasks.push(RunTask::Anonymous {
+                    parent: parent.clone(),
+                    block_id: *block_id,
+                    argument: argument.clone(),
+                }),
             }
         }
         run_tasks.push(RunTask::Task(task));

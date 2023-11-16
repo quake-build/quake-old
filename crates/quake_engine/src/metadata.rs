@@ -49,6 +49,7 @@ impl Task {
 pub enum Dependency {
     Named(Spanned<String>),
     Anonymous {
+        parent: Spanned<String>,
         block_id: BlockId,
         argument: Option<(VarId, Value)>,
     },

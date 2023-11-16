@@ -130,6 +130,7 @@ impl Command for Subtask {
             let mut state = state.lock().unwrap();
             let Scope::TaskDecl(task) = state.get_scope_mut(stack, span).unwrap(); // TODO handle error
             task.dependencies.push(Dependency::Anonymous {
+                parent: task.name.clone(),
                 block_id: closure.block_id,
                 argument,
             });
