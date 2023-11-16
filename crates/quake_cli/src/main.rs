@@ -60,34 +60,7 @@ fn main() -> Result<()> {
                             )),
                     ),
                 Command::new("validate").about("Validate all quake scripts in the current project"),
-                Command::new("inspect")
-                    .about("Retrieve information about the current project")
-                    .subcommand_required(true)
-                    .subcommands([
-                        Command::new("config")
-                            .about("Get configuration information")
-                            .arg(
-                                Arg::new("toolchain")
-                                    .value_name("TOOLCHAIN")
-                                    .help("A specific toolchain to inspect"),
-                            ),
-                        Command::new("tasks")
-                            .about("Get task information")
-                            .alias("task")
-                            .arg(
-                                Arg::new("task").value_name("TASK").help(
-                                    "A specific task to inspect, in the form [SUBPROJECT]:TASK",
-                                ),
-                            ),
-                        Command::new("toolchains")
-                            .about("Get toolchain information")
-                            .alias("toolchain")
-                            .arg(
-                                Arg::new("toolchain")
-                                    .value_name("TOOLCHAIN")
-                                    .help("A specific toolchain to inspect"),
-                            ),
-                    ]),
+                Command::new("inspect").about("Dump build script metadata as JSON"),
             ])
             .next_help_heading("Environment")
             .args([Arg::new("project")
@@ -177,8 +150,19 @@ fn main() -> Result<()> {
         Options { quiet }
     };
 
-    let task = matches.get_one::<String>("task").unwrap().clone();
-    Engine::new(project, options)?.run(&task)?;
+    let mut engine = Engine::new(project, options)?;
+
+    match matches.subcommand() {
+        None => {
+            let task = matches.get_one::<String>("task").unwrap().clone();
+            engine.run(&task)?;
+        }
+        Some(("inspect", _)) => {
+            let metadata = engine.metadata().clone();
+            println!("{}", serde_json::to_string(&metadata).into_diagnostic()?);
+        }
+        Some(_) => unimplemented!(),
+    }
 
     Ok(())
 }

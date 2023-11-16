@@ -8,3 +8,4 @@ clap = { version = "4.4.6", features = ["cargo", "wrap_help"] }
 
 quake_core = { path = "../quake_core" }
 quake_engine = { path = "../quake_engine" }
+serde_json = "1.0.108"

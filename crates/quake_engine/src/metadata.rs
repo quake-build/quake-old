@@ -30,7 +30,8 @@ pub struct Task {
     pub dependencies: Vec<Dependency>,
     pub sources: Vec<Spanned<String>>,
     pub artifacts: Vec<Spanned<String>>,
-    pub run_block: Option<BlockId>,
+    #[serde(skip)]
+    pub(crate) run_block: Option<BlockId>,
 }
 
 impl Task {

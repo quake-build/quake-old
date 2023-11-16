@@ -16,7 +16,7 @@ use nu_protocol::{
     print_if_stream, report_error, report_error_new, BlockId, PipelineData, Span, Spanned, Type,
     Value, VarId,
 };
-use parking_lot::Mutex;
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 
 use quake_core::prelude::*;
 
@@ -77,6 +77,10 @@ impl Engine {
 
     pub fn project(&self) -> &Project {
         &self.project
+    }
+
+    pub fn metadata(&self) -> MappedMutexGuard<BuildMetadata> {
+        MutexGuard::map(self.internal_state.lock(), |s| &mut s.metadata)
     }
 
     pub fn run(&mut self, task: &str) -> Result<bool> {
