@@ -52,9 +52,9 @@ def-task render-docs {
     pandoc --quiet -s -o out.html in.md
 }
 
-# the -0 flag is used here for convenience to indicate that the task has only a
-# declaration block, and no task body
-def-task -0 bundle {
+# the -d flag is used here for convenience to indicate that the task is purely
+# declarative (i.e. has only a declaration block, and no task body)
+def-task -d bundle {
     depends compile
     depends render-docs
 }
@@ -129,7 +129,7 @@ def rust-package [package: string] {
     }
 }
 
-def-task -0 build-my-package {
+def-task -d build-my-package {
     rust-package my-package
 }
 ```

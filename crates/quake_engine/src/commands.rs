@@ -27,9 +27,9 @@ impl Command for DefTask {
             .optional("decl_body", SyntaxShape::Block, "declarational body")
             .required("run_body", SyntaxShape::Block, "run body")
             .switch(
-                "invisible",
-                "make this an \"invisible\" task with no run body",
-                Some('i'),
+                "declarative",
+                "define a \"pure\" task with only a declaration body",
+                Some('d'),
             )
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
@@ -43,10 +43,10 @@ impl Command for DefTask {
     ) -> Result<PipelineData, ShellError> {
         let name: Spanned<String> = call.req(engine_state, stack, 0)?;
 
-        let invisible = call.has_flag("invisible");
+        let declarative = call.has_flag("declarative");
 
         let block_0: Block = call.req(engine_state, stack, 1)?;
-        let (decl_block, run_block) = if !invisible {
+        let (decl_block, run_block) = if !declarative {
             match call.opt(engine_state, stack, 2)? {
                 Some(block_1) => (Some(block_0), Some(block_1)),
                 None => (None, Some(block_0)),
