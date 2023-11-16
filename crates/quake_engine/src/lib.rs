@@ -62,55 +62,23 @@ impl Engine {
         let engine_state = create_engine_state(build_state.clone())?;
         let stack = create_stack(project.project_root());
 
-        Ok(Self {
+        let mut engine = Self {
             project,
             options,
             internal_state: build_state,
             engine_state,
             stack,
             is_loaded: false,
-        })
+        };
+        engine.load()?;
+        Ok(engine)
     }
 
     pub fn project(&self) -> &Project {
         &self.project
     }
 
-    pub fn load(&mut self) -> Result<bool> {
-        assert!(!self.is_loaded, "build script should only be loaded once");
-
-        let build_script = self.project.build_script();
-        let filename = build_script
-            .strip_prefix(self.project.project_root())
-            .unwrap_or(build_script)
-            .to_string_lossy()
-            .to_string();
-
-        let source = fs::read_to_string(build_script)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to read build script `{filename}`"))?;
-
-        if !self.eval_source(source.as_bytes(), &filename) {
-            return Ok(false);
-        }
-
-        // validate the parsed results
-        self.internal_state.lock().unwrap().metadata.validate()?;
-
-        self.is_loaded = true;
-
-        Ok(true)
-    }
-
-    pub fn is_loaded(&self) -> bool {
-        self.is_loaded
-    }
-
     pub fn run(&mut self, task: &str) -> Result<bool> {
-        if !self.is_loaded {
-            self.load()?;
-        }
-
         // determine a build plan (i.e. the order in which to evaluate dependencies)
         let metadata = self.internal_state.lock().unwrap().metadata.clone();
         let build_plan = generate_build_plan(task, &metadata)?;
@@ -156,6 +124,32 @@ impl Engine {
         }
 
         self.print_action("Finished", task);
+
+        Ok(true)
+    }
+
+    fn load(&mut self) -> Result<bool> {
+        assert!(!self.is_loaded, "build script should only be loaded once");
+
+        let build_script = self.project.build_script();
+        let filename = build_script
+            .strip_prefix(self.project.project_root())
+            .unwrap_or(build_script)
+            .to_string_lossy()
+            .to_string();
+
+        let source = fs::read_to_string(build_script)
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to read build script `{filename}`"))?;
+
+        if !self.eval_source(source.as_bytes(), &filename) {
+            return Ok(false);
+        }
+
+        // validate the parsed results
+        self.internal_state.lock().unwrap().metadata.validate()?;
+
+        self.is_loaded = true;
 
         Ok(true)
     }
