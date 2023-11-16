@@ -3,6 +3,8 @@ use nu_protocol::ast::Call;
 use nu_protocol::engine::{Block, Closure, Command, EngineState, Stack};
 use nu_protocol::{Category, PipelineData, ShellError, Signature, Spanned, SyntaxShape, Type};
 
+use quake_core::prelude::IntoShellError;
+
 use crate::metadata::{Dependency, Task};
 use crate::state::{Scope, State};
 
@@ -68,7 +70,10 @@ impl Command for DefTask {
             eval_block(engine_state, stack, block, input, false, false)?;
 
             let mut state = state.lock().unwrap();
-            let task = state.pop_scope(stack, call.span()).unwrap().task; // TODO handle error
+            let task = state
+                .pop_scope(stack, call.span())
+                .map_err(IntoShellError::into_shell_error)?
+                .task;
             state.metadata.tasks.insert(task.name.item.clone(), task);
         } else {
             state
@@ -128,7 +133,10 @@ impl Command for Subtask {
         let state = State::from_engine_state(engine_state).unwrap();
         {
             let mut state = state.lock().unwrap();
-            let task = &mut state.get_scope_mut(stack, span).unwrap().task; // TODO handle error
+            let task = &mut state
+                .get_scope_mut(stack, span)
+                .map_err(IntoShellError::into_shell_error)?
+                .task;
             task.dependencies.push(Dependency::Anonymous {
                 parent: task.name.clone(),
                 block_id: closure.block_id,
@@ -175,7 +183,7 @@ impl Command for Depends {
             let mut state = state.lock().unwrap();
             state
                 .get_scope_mut(stack, span)
-                .unwrap() // TODO handle error
+                .map_err(IntoShellError::into_shell_error)?
                 .task
                 .dependencies
                 .push(Dependency::Named(dep));
@@ -224,7 +232,7 @@ impl Command for Sources {
             let mut state = state.lock().unwrap();
             state
                 .get_scope_mut(stack, span)
-                .unwrap() // TODO handle error
+                .map_err(IntoShellError::into_shell_error)?
                 .task
                 .sources
                 .extend(values);
@@ -273,7 +281,7 @@ impl Command for Produces {
             let mut state = state.lock().unwrap();
             state
                 .get_scope_mut(stack, span)
-                .unwrap() // TODO handle error
+                .map_err(IntoShellError::into_shell_error)?
                 .task
                 .artifacts
                 .extend(values);

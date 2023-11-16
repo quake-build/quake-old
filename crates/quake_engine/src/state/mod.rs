@@ -33,15 +33,17 @@ impl State {
 
     #[allow(dead_code)]
     pub fn get_scope(&self, stack: &Stack, span: Span) -> Result<&Scope> {
+        let id = get_scope_id(stack, span)?;
         self.scopes
-            .get(&get_scope_id(stack, span)?)
-            .ok_or_else(|| errors::UndefinedScope { span }.into())
+            .get(&id)
+            .ok_or_else(|| panic!("no scope registered with ID {id}"))
     }
 
     pub fn get_scope_mut(&mut self, stack: &Stack, span: Span) -> Result<&mut Scope> {
+        let id = get_scope_id(stack, span)?;
         self.scopes
-            .get_mut(&get_scope_id(stack, span)?)
-            .ok_or_else(|| errors::UndefinedScope { span }.into())
+            .get_mut(&id)
+            .ok_or_else(|| panic!("no scope registered with ID {id}"))
     }
 
     pub fn push_scope(&mut self, scope: Scope, stack: &mut Stack, span: Span) -> ScopeId {
@@ -144,9 +146,10 @@ fn get_state(engine_state: &EngineState) -> Result<Arc<Mutex<State>>> {
 
 fn get_scope_id(stack: &Stack, span: Span) -> Result<ScopeId> {
     if let Value::Int { val, .. } = stack.get_var(QUAKE_SCOPE_VARIABLE_ID, span)? {
-        val.try_into()
-            .map_err(|_| panic!("Invalid scope ID: {val}"))
-    } else {
-        Err(errors::UndefinedScope { span }.into())
+        if let Ok(val) = val.try_into() {
+            return Ok(val);
+        }
     }
+
+    Err(errors::UnknownScope { span }.into())
 }

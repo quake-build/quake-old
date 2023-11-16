@@ -23,23 +23,13 @@ pub struct TaskNotFound {
     pub task: String,
 }
 
-// TODO add optional suggestions for intended scope blocks
 #[derive(Debug, Clone, Error, Diagnostic)]
-#[error("Undefined scope")]
+#[error("Unknown scope")]
 #[diagnostic(
-    code(quake::scope::undefined),
-    help("Did you mean to evaluate this command inside of a special scope block?")
+    code(quake::scope::unknown),
+    help("Did you mean to evaluate this command inside of a special scope block? (e.g. def-task)")
 )]
-pub struct UndefinedScope {
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, Error, Diagnostic)]
-#[error("Scope mismatch")]
-#[diagnostic(
-    code(quake::scope::mismatch),
-    help("Did you mean to evaluate this command inside of a different special scope block?")
-)]
-pub struct ScopeMismatch {
+pub struct UnknownScope {
+    #[label("command used here")]
     pub span: Span,
 }
