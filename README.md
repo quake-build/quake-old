@@ -100,9 +100,9 @@ def-task check-rust-install {
 }
 
 def rust-package [package: string] {
-    let task_name = "build-" + ($package | str replace -a "_" "-")
+    let package_name = $package | str replace -a "_" "-"
 
-    def-task $task_name {
+    def-task "build-" + $package_name {
         depends check-rust-install
     } {
         cargo build $package
@@ -135,17 +135,16 @@ def-task -0 build-my-package {
 ```
 
 In the second example, when the `rust-package` function is invoked inside the `build` task's declaration body, its "task scope" is carried with it, so we can use commands like `depends`, `sources`, `produces`, and the new `subtask` command shown above.
-This allows us to create language-specific toolchains that others can depend upon in their project to make it very easy to get up and running quickly with minimal boilerplate.
 
 ## Motivation
 
 Many software projects have build system requirements that are simply not achievable in the native build system of the language or framework they are working in, particularly when it comes to requirements like:
 
 - Generating assets at build-time (e.g. rasterizations of an SVG app icon)
-- Bundling and signing an application for one or more targets (see macOS Universal Binaries)
-- Composing multiple build systems together (for example, in a multilingual project)
+- Bundling and signing an application for one or more targets (e.g. macOS Universal Binaries)
+- Composing multiple build systems together (e.g. in a multilingual project)
 
-Typically, these requirements are fulfilled by the some of the following kinds of solutions:
+Typically, these requirements are fulfilled by the some combination of the following kinds of solutions:
 
 - Rules/targets-based build systems
     - Examples: make, ninja
@@ -172,13 +171,24 @@ Typically, these requirements are fulfilled by the some of the following kinds o
             - See [reindeer](https://github.com/facebookincubator/reindeer), a solution for buck2 which downloads crates.io crates and converts them into buck2 dependencies
         - Require a lot of internal knowledge to use, limiting potential users/contributors
 - Language-specific build systems adapted for other purposes
-    - Examples: npm, yarn, cargo (via `build.rs`, or the ["xtask" pattern]((https://github.com/matklad/cargo-xtask))), `build.sh`s and similar
+    - Examples: npm, yarn, cargo (via `build.rs`, or the ["xtask" pattern]((https://github.com/matklad/cargo-xtask)))
     - Pros:
         - Most developers already have and are familiar with the toolchain for the language they're working in
         - Can distribute to package repositories as normal
     - Cons:
         - No consistent standard for configuration, ensuring system dependencies are available, etc., thus requiring a lot of annoying boilerplate
         - Poor support for other languages, build system features and paradigms
+- Shell scripts
+    - Pros:
+        - Easy to get up and running
+        - Wide range of tools for dealing with system dependencies
+    - Cons:
+        - Scale poorly
+        - Rarely truly cross-platform, even when using a common shell like bash
+        - Poor fit for a scripting language
+        - Lack useful tools, leading to build time dependencies like jq
+        
+quake attempts to bridge these solutions by being technology-agnostic, cross-platform, and very flexible and composable.
 
 ## License
 
