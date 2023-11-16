@@ -63,13 +63,12 @@ impl Command for DefTask {
         if let Some(block) = &decl_block {
             state
                 .lock()
-                .unwrap()
                 .push_scope(Scope::new(task), stack, call.span());
 
             let block = engine_state.get_block(block.block_id);
             eval_block(engine_state, stack, block, input, false, false)?;
 
-            let mut state = state.lock().unwrap();
+            let mut state = state.lock();
             let task = state
                 .pop_scope(stack, call.span())
                 .map_err(IntoShellError::into_shell_error)?
@@ -78,7 +77,6 @@ impl Command for DefTask {
         } else {
             state
                 .lock()
-                .unwrap()
                 .metadata
                 .tasks
                 .insert(task.name.item.clone(), task);
@@ -132,7 +130,7 @@ impl Command for Subtask {
 
         let state = State::from_engine_state(engine_state).unwrap();
         {
-            let mut state = state.lock().unwrap();
+            let mut state = state.lock();
             let task = &mut state
                 .get_scope_mut(stack, span)
                 .map_err(IntoShellError::into_shell_error)?
@@ -179,15 +177,13 @@ impl Command for Depends {
         let dep: Spanned<String> = call.req(engine_state, stack, 0)?;
 
         let state = State::from_engine_state(engine_state).unwrap();
-        {
-            let mut state = state.lock().unwrap();
-            state
-                .get_scope_mut(stack, span)
-                .map_err(IntoShellError::into_shell_error)?
-                .task
-                .dependencies
-                .push(Dependency::Named(dep));
-        }
+        state
+            .lock()
+            .get_scope_mut(stack, span)
+            .map_err(IntoShellError::into_shell_error)?
+            .task
+            .dependencies
+            .push(Dependency::Named(dep));
 
         Ok(PipelineData::empty())
     }
@@ -228,15 +224,13 @@ impl Command for Sources {
         let values: Vec<Spanned<String>> = call.req(engine_state, stack, 0)?;
 
         let state = State::from_engine_state(engine_state).unwrap();
-        {
-            let mut state = state.lock().unwrap();
-            state
-                .get_scope_mut(stack, span)
-                .map_err(IntoShellError::into_shell_error)?
-                .task
-                .sources
-                .extend(values);
-        }
+        state
+            .lock()
+            .get_scope_mut(stack, span)
+            .map_err(IntoShellError::into_shell_error)?
+            .task
+            .sources
+            .extend(values);
 
         Ok(PipelineData::empty())
     }
@@ -277,15 +271,13 @@ impl Command for Produces {
         let values: Vec<Spanned<String>> = call.req(engine_state, stack, 0)?;
 
         let state = State::from_engine_state(engine_state).unwrap();
-        {
-            let mut state = state.lock().unwrap();
-            state
-                .get_scope_mut(stack, span)
-                .map_err(IntoShellError::into_shell_error)?
-                .task
-                .artifacts
-                .extend(values);
-        }
+        state
+            .lock()
+            .get_scope_mut(stack, span)
+            .map_err(IntoShellError::into_shell_error)?
+            .task
+            .artifacts
+            .extend(values);
 
         Ok(PipelineData::empty())
     }

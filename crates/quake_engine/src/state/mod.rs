@@ -1,10 +1,12 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use nu_protocol::engine::{EngineState, Stack};
 use nu_protocol::{CustomValue, ShellError, Span, Value};
-use quake_core::prelude::*;
+use parking_lot::Mutex;
 use serde::Serialize;
+
+use quake_core::prelude::*;
 
 use crate::metadata::{BuildMetadata, Task};
 use crate::{Result, QUAKE_SCOPE_VARIABLE_ID, QUAKE_VARIABLE_ID};

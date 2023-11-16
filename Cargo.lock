@@ -2052,6 +2052,7 @@ dependencies = [
  "nu-parser",
  "nu-path",
  "nu-protocol",
+ "parking_lot",
  "quake_core",
  "serde",
 ]

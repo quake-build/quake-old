@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use glob::glob;
@@ -16,6 +16,7 @@ use nu_protocol::{
     print_if_stream, report_error, report_error_new, BlockId, PipelineData, Span, Spanned, Type,
     Value, VarId,
 };
+use parking_lot::Mutex;
 
 use quake_core::prelude::*;
 
@@ -80,7 +81,7 @@ impl Engine {
 
     pub fn run(&mut self, task: &str) -> Result<bool> {
         // determine a build plan (i.e. the order in which to evaluate dependencies)
-        let metadata = self.internal_state.lock().unwrap().metadata.clone();
+        let metadata = self.internal_state.lock().metadata.clone();
         let build_plan = generate_build_plan(task, &metadata)?;
 
         // run all tasks in the proper order
@@ -147,7 +148,7 @@ impl Engine {
         }
 
         // validate the parsed results
-        self.internal_state.lock().unwrap().metadata.validate()?;
+        self.internal_state.lock().metadata.validate()?;
 
         self.is_loaded = true;
 
