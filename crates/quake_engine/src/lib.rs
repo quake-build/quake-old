@@ -89,9 +89,10 @@ impl Engine {
         let build_plan = generate_build_plan(task, &metadata)?;
 
         // run all tasks in the proper order
-        for run_task in build_plan {
+        for run_task in &build_plan {
             if let RunTask::Task(task) = run_task {
-                // perform a dirty check only if both sources and artifacts are defined
+                // perform a dirty check, only if both sources and artifacts are
+                // defined
                 if !is_dirty(task)? {
                     self.print_action("Skipping", &task.name.item);
                     continue;
@@ -100,7 +101,14 @@ impl Engine {
 
             let run_block = match &run_task {
                 RunTask::Task(task) => {
-                    if task.run_block.is_some() {
+                    // print the run message if this task has any associated run
+                    // bodies (itself or any subtasks)
+                    if task.run_block.is_some()
+                        || build_plan.iter().any(|t| {
+                            matches!(t, RunTask::Anonymous { parent, .. }
+                                     if parent.item == task.name.item)
+                        })
+                    {
                         self.print_action("Running", &task.name.item);
                     }
                     task.run_block
@@ -108,6 +116,7 @@ impl Engine {
                 RunTask::Anonymous {
                     block_id, argument, ..
                 } => {
+                    // bind the closure argument to the saved data, if it exists
                     if let Some(var) = argument {
                         self.stack.vars.push(var.clone());
                     }
@@ -118,9 +127,10 @@ impl Engine {
             if let Some(run_block) = run_block {
                 let block = self.engine_state.get_block(run_block).clone();
                 if !self.eval_block(&block) {
+                    // if a subtask fails, report the name of its parent
                     let task_name = match run_task {
                         RunTask::Task(task) => task.name.item.clone(),
-                        RunTask::Anonymous { parent, .. } => parent.item,
+                        RunTask::Anonymous { parent, .. } => parent.item.clone(),
                     };
                     self.print_error("Failed", &task_name);
                     return Ok(false);
@@ -154,6 +164,7 @@ impl Engine {
         // validate the parsed results
         self.internal_state.lock().metadata.validate()?;
 
+        // set so that we don't load again
         self.is_loaded = true;
 
         Ok(true)
@@ -422,11 +433,12 @@ fn expand_globs(patterns: &[Spanned<String>]) -> Result<Vec<PathBuf>> {
 }
 
 fn latest_timestamp(paths: &[PathBuf]) -> Result<Option<SystemTime>> {
-    let timestamps = paths
+    Ok(paths
         .iter()
         .map(Path::new)
         .filter(|p| p.exists())
         .map(|s| fs::metadata(s).and_then(|m| m.modified()).into_diagnostic())
-        .collect::<Result<Vec<_>>>()?;
-    Ok(timestamps.into_iter().max())
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .max())
 }
