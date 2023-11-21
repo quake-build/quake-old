@@ -47,11 +47,14 @@ impl Task {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case", tag = "type")]
 pub enum Dependency {
     Named(Spanned<String>),
     Anonymous {
         parent: Spanned<String>,
+        #[serde(skip)]
         block_id: BlockId,
+        #[serde(skip)]
         argument: Option<(VarId, Value)>,
     },
 }
