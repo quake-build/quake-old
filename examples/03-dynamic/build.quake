@@ -1,6 +1,10 @@
-def rust-package [package: string] {
-    # determine sources and artifacts from something like cargo metadata
+def-task check-rust-toolchain {
+    # ensure that a sufficient rust toolchain is installed
     # ...
+}
+
+def rust-package [package: string] {
+    depends check-rust-toolchain
 
     # define and depend upon an anonymous task that actually builds the package
     $package | subtask {|p|
@@ -8,7 +12,7 @@ def rust-package [package: string] {
     }
 }
 
-def-task -i build {
+def-task -d build {
     rust-package my-package
 }
 

@@ -10,10 +10,10 @@ def-task render-docs {
     sources ["in.md"]
     produces ["out.html"]
 } {
-    pandoc --quiet -s -o out.html in.md
+    pandoc --quiet -o out.html in.md
 }
 
-def-task -i bundle {
+def-task -d bundle {
     depends compile
     depends render-docs
 }

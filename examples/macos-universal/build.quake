@@ -1,0 +1,52 @@
+let config = open config.toml
+let is_release = $config | get release
+
+let targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+
+def-task check-rust-toolchain {
+    let installed = rustup target list --installed | lines
+
+    def require-target [target: string] {
+        if $target not-in $installed {
+            error make {
+                msg: $"rustup target ($target) not installed"
+                label: {
+                    text: "required here"
+                    span: (metadata $target).span
+                }
+                help: $"run `rustup target add ($target)` to install"
+            }
+        }
+    }
+
+    for $t in $targets {
+        require-target $t
+    }
+}
+
+let out_dir = if $is_release { "release" } else { "debug" }
+let binaries = $targets | each {|t| $"target/($t)/($out_dir)/hello"}
+
+def-task build {
+    depends check-rust-toolchain
+
+    for $t in $targets {
+        $t | subtask $"build-($t)" {|t|
+            if $is_release {
+                cargo build --target $t --release
+            } else {
+                cargo build --target $t
+            }
+        }
+    }
+
+    sources $binaries
+    produces ["universal_binary"]
+} {
+    lipo -create -output universal_binary $binaries
+}
+
+def-task clean {
+    cargo clean
+    rm -f universal_binary
+}

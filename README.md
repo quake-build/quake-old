@@ -86,15 +86,19 @@ def-task build {
 }
 ```
 
-### Custom functions, subtasks
+### Carrying scopes
+
+Any functions run inside of a `def-task` declaration body automatically "inherit" the task scope they are run in, allowing us to use commands like `depends`, `sources`, `produces`, etc. wherever we like.
+
+TODO motivating example
+
+### Generating tasks
 
 With larger projects, it can be really useful to write common functions to generate tasks automatically.
-We can do this two separate ways.
-
-First, by invoking `def-task` inside of a function:
+Because the `def-task` registers tasks globally, we can programatically define tasks, like so:
 
 ``` nu
-def-task check-rust-install {
+def-task check-rust-toolchain {
     # ensure that a sufficient rust toolchain is installed
     # ...
 }
@@ -103,7 +107,7 @@ def rust-package [package: string] {
     let package_name = $package | str replace -a "_" "-"
 
     def-task "build-" + $package_name {
-        depends check-rust-install
+        depends check-rust-toolchain
     } {
         cargo build $package
     }
@@ -112,29 +116,30 @@ def rust-package [package: string] {
 rust-package my-package
 ```
 
-Or second, by delegating the declaration work to a function:
+We can then run `quake build-my-package` to get the expected result.
 
-``` nu
-def-task check-rust-install {
-    # ensure that a sufficient rust toolchain is installed
-    # ...
-}
+### Subtasks
 
-def rust-package [package: string] {
-    depends check-rust-install
+While the previous example works well for generating tasks exposed to the user, sometimes it's useful to be able to programatically define and depend upon a task in one step.
+In quake, we call these *subtasks*, which consist only of a name and a run body.
 
-    # define and depend upon an anonymous task that actually builds the package
-    $package | subtask {|p|
-        cargo build --package $p
+```nu
+let targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+
+def-task -d build-all-the-targets {
+    for $t in $targets {
+        $t | subtask $"build-($t)" {|t|
+            cargo build --target $t
+        }
     }
-}
-
-def-task -d build-my-package {
-    rust-package my-package
 }
 ```
 
-In the second example, when the `rust-package` function is invoked inside the `build` task's declaration body, its "task scope" is carried with it, so we can use commands like `depends`, `sources`, `produces`, and the new `subtask` command shown above.
+When we run `quake build-all-the-targets`, we'll see two additional tasks that run for each of the targets.
+
+Note how `$t` needs to be piped into the `subtask` command here--this is so that we can save the value of `$t` to be injected into the task later, since its lifetime will have ended by the time the subtask is run.
+
+You can see a more comprehensive example of this in the [universal macOS binary example](./examples/macos-universal/build.quake).
 
 ## Motivation
 

@@ -1,25 +1,11 @@
-let config = $env | get -i PROFILE | default config-dev.toml | open
+let config = open config.toml
 let is_release = $config | get release
-
-def-task dump-config {
-    $config
-}
 
 def-task build {
     if $is_release {
         cargo build --release
     } else {
         cargo build
-    }
-}
-
-def-task run {
-    depends build
-} {
-    if $is_release {
-        cargo run --release
-    } else {
-        cargo run
     }
 }
 
