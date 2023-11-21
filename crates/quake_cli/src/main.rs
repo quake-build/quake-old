@@ -1,3 +1,5 @@
+#![feature(exact_size_is_empty)]
+
 use std::path::PathBuf;
 
 use quake_core::prelude::*;
@@ -40,6 +42,7 @@ fn main() -> Result<()> {
             )
             .subcommand_help_heading("Subcommands")
             .subcommands([
+                Command::new("list").about("List the available tasks"),
                 Command::new("docs")
                     .about("Open the quake documentation in a web browser")
                     .arg(
@@ -156,6 +159,19 @@ fn main() -> Result<()> {
         None => {
             let task = matches.get_one::<String>("task").unwrap().clone();
             engine.run(&task)?;
+        }
+        Some(("list", _)) => {
+            let metadata = engine.metadata();
+            let tasks = metadata.tasks.keys();
+
+            if tasks.is_empty() {
+                println!("No available tasks.");
+            } else {
+                println!("Available tasks:");
+                for task in tasks {
+                    println!("- {task}");
+                }
+            }
         }
         Some(("inspect", _)) => {
             let metadata = engine.metadata().clone();
