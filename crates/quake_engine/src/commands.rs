@@ -1,7 +1,9 @@
 use nu_engine::{eval_block, CallExt};
 use nu_protocol::ast::Call;
 use nu_protocol::engine::{Block, Closure, Command, EngineState, Stack};
-use nu_protocol::{Category, PipelineData, ShellError, Signature, Spanned, SyntaxShape, Type};
+use nu_protocol::{
+    Category, PipelineData, ShellError, Signature, Spanned, SyntaxShape, Type, Value,
+};
 
 use quake_core::prelude::IntoShellError;
 
@@ -24,7 +26,7 @@ impl Command for DefTask {
 
     fn signature(&self) -> Signature {
         Signature::build("def-task")
-            .input_output_types(vec![(Type::Nothing, Type::Nothing)])
+            .input_output_types(vec![(Type::Nothing, Type::String)])
             .required("name", SyntaxShape::String, "task name")
             .optional("decl_body", SyntaxShape::Block, "declarational body")
             .required("run_body", SyntaxShape::Block, "run body")
@@ -59,7 +61,7 @@ impl Command for DefTask {
 
         let state = State::from_engine_state(engine_state).unwrap();
 
-        let task = Task::new(name, run_block.map(|b| b.block_id));
+        let task = Task::new(name.clone(), run_block.map(|b| b.block_id));
         if let Some(block) = &decl_block {
             state
                 .lock()
@@ -82,7 +84,13 @@ impl Command for DefTask {
                 .insert(task.name.item.clone(), task);
         }
 
-        Ok(PipelineData::empty())
+        Ok(PipelineData::Value(
+            Value::String {
+                val: name.item,
+                internal_span: name.span,
+            },
+            None,
+        ))
     }
 }
 
@@ -100,7 +108,7 @@ impl Command for Subtask {
 
     fn signature(&self) -> Signature {
         Signature::build("subtask")
-            .input_output_types(vec![(Type::Any, Type::Nothing)])
+            .input_output_types(vec![(Type::Any, Type::String)])
             .required("name", SyntaxShape::String, "subtask name")
             .required(
                 "run_body",
@@ -142,13 +150,19 @@ impl Command for Subtask {
                 .task;
             task.dependencies.push(Dependency::Subtask {
                 parent: task.name.clone(),
-                name,
+                name: name.clone(),
                 block_id: closure.block_id,
                 argument,
             });
         }
 
-        Ok(PipelineData::empty())
+        Ok(PipelineData::Value(
+            Value::String {
+                val: name.item,
+                internal_span: name.span,
+            },
+            None,
+        ))
     }
 }
 
