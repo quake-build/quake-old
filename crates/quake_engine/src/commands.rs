@@ -25,7 +25,7 @@ impl Command for DefTask {
     fn signature(&self) -> Signature {
         Signature::build("def-task")
             .input_output_types(vec![(Type::Nothing, Type::Nothing)])
-            .required("def_name", SyntaxShape::String, "task name")
+            .required("name", SyntaxShape::String, "task name")
             .optional("decl_body", SyntaxShape::Block, "declarational body")
             .required("run_body", SyntaxShape::Block, "run body")
             .switch(
@@ -101,6 +101,7 @@ impl Command for Subtask {
     fn signature(&self) -> Signature {
         Signature::build("subtask")
             .input_output_types(vec![(Type::Any, Type::Nothing)])
+            .required("name", SyntaxShape::String, "subtask name")
             .required(
                 "run_body",
                 SyntaxShape::Closure(Some(vec![SyntaxShape::Any])),
@@ -118,7 +119,11 @@ impl Command for Subtask {
     ) -> Result<PipelineData, ShellError> {
         let span = call.span();
 
-        let closure: Closure = call.req(engine_state, stack, 0)?;
+        let (name, closure) = (
+            call.req::<Spanned<String>>(engine_state, stack, 0)?,
+            call.req::<Closure>(engine_state, stack, 1)?,
+        );
+
         let block = engine_state.get_block(closure.block_id);
 
         let argument = block
@@ -135,8 +140,9 @@ impl Command for Subtask {
                 .get_scope_mut(stack, span)
                 .map_err(IntoShellError::into_shell_error)?
                 .task;
-            task.dependencies.push(Dependency::Anonymous {
+            task.dependencies.push(Dependency::Subtask {
                 parent: task.name.clone(),
+                name,
                 block_id: closure.block_id,
                 argument,
             });
@@ -183,7 +189,7 @@ impl Command for Depends {
             .map_err(IntoShellError::into_shell_error)?
             .task
             .dependencies
-            .push(Dependency::Named(dep));
+            .push(Dependency::Task(dep));
 
         Ok(PipelineData::empty())
     }

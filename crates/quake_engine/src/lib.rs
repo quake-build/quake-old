@@ -105,7 +105,7 @@ impl Engine {
                     // bodies (itself or any subtasks)
                     if task.run_block.is_some()
                         || build_plan.iter().any(|t| {
-                            matches!(t, RunTask::Anonymous { parent, .. }
+                            matches!(t, RunTask::Subtask { parent, .. }
                                      if parent.item == task.name.item)
                         })
                     {
@@ -113,9 +113,14 @@ impl Engine {
                     }
                     task.run_block
                 }
-                RunTask::Anonymous {
-                    block_id, argument, ..
+                RunTask::Subtask {
+                    name,
+                    block_id,
+                    argument,
+                    ..
                 } => {
+                    self.print_action("Running", &name.item);
+
                     // bind the closure argument to the saved data, if it exists
                     if let Some(var) = argument {
                         self.stack.add_var(var.0, var.1.clone());
@@ -127,10 +132,9 @@ impl Engine {
             if let Some(run_block) = run_block {
                 let block = self.engine_state.get_block(run_block).clone();
                 if !self.eval_block(&block) {
-                    // if a subtask fails, report the name of its parent
                     let task_name = match run_task {
                         RunTask::Task(task) => task.name.item.clone(),
-                        RunTask::Anonymous { parent, .. } => parent.item.clone(),
+                        RunTask::Subtask { name, .. } => name.item.clone(),
                     };
                     self.print_error("Failed", &task_name);
                     return Ok(false);
@@ -356,8 +360,9 @@ fn create_stack(cwd: impl AsRef<Path>) -> Stack {
 #[derive(PartialEq)]
 enum RunTask<'a> {
     Task(&'a Task),
-    Anonymous {
+    Subtask {
         parent: Spanned<String>,
+        name: Spanned<String>,
         block_id: BlockId,
         argument: Option<(VarId, Value)>,
     },
@@ -369,18 +374,20 @@ fn generate_build_plan<'a>(task: &str, metadata: &'a BuildMetadata) -> Result<Ve
     fn add_deps<'a>(task: &'a Task, run_tasks: &mut Vec<RunTask<'a>>, metadata: &'a BuildMetadata) {
         for dep in &task.dependencies {
             match dep {
-                Dependency::Named(dep) => {
+                Dependency::Task(dep) => {
                     let task = &metadata.tasks[&dep.item];
                     if !run_tasks.contains(&RunTask::Task(task)) {
                         add_deps(task, run_tasks, metadata);
                     }
                 }
-                Dependency::Anonymous {
+                Dependency::Subtask {
                     parent,
+                    name,
                     block_id,
                     argument,
-                } => run_tasks.push(RunTask::Anonymous {
+                } => run_tasks.push(RunTask::Subtask {
                     parent: parent.clone(),
+                    name: name.clone(),
                     block_id: *block_id,
                     argument: argument.clone(),
                 }),

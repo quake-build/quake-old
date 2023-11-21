@@ -49,9 +49,10 @@ impl Task {
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum Dependency {
-    Named(Spanned<String>),
-    Anonymous {
+    Task(Spanned<String>),
+    Subtask {
         parent: Spanned<String>,
+        name: Spanned<String>,
         #[serde(skip)]
         block_id: BlockId,
         #[serde(skip)]
