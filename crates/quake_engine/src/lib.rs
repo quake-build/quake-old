@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use glob::glob;
+use miette::bail;
 use nu_ansi_term::{Color, Style};
 use nu_cli::gather_parent_env_vars;
 use nu_cmd_lang::create_default_context;
@@ -71,7 +72,11 @@ impl Engine {
             stack,
             is_loaded: false,
         };
-        engine.load()?;
+
+        if !engine.load()? {
+            bail!("Failed to read build script");
+        }
+
         Ok(engine)
     }
 
