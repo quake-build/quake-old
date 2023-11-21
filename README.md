@@ -22,7 +22,7 @@ The central building block of a quake file is a *task*, which contains a run bod
 
 Here's a very a simple quake script which just aliases a few cargo commands:
 
-``` nu
+```sh
 def-task build {
     cargo build
 }
@@ -38,7 +38,7 @@ With this in place, we could then run `quake build` or `quake clean` to run eith
 
 A more complicated example might look like this:
 
-```nu
+```sh
 def-task compile {
     cargo build
 }
@@ -74,7 +74,7 @@ We could do the same thing for the `compile` task as well, but in this case we'l
 Adding configuration is easy with nushell's native data manipulation toolset.
 In this example, we read a boolean from the `config.toml` at the project root to determine whether or not we are performing a release build.
 
-``` nu
+```sh
 let is_release = open config.toml | get release
 
 def-task build {
@@ -97,7 +97,7 @@ TODO motivating example
 With larger projects, it can be really useful to write common functions to generate tasks automatically.
 Because the `def-task` registers tasks globally, we can programatically define tasks, like so:
 
-``` nu
+```sh
 def-task check-rust-toolchain {
     # ensure that a sufficient rust toolchain is installed
     # ...
@@ -123,7 +123,7 @@ We can then run `quake build-my-package` to get the expected result.
 While the previous example works well for generating tasks exposed to the user, sometimes it's useful to be able to programatically define and depend upon a task in one step.
 In quake, we call these *subtasks*, which consist only of a name and a run body.
 
-```nu
+```sh
 let targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
 
 def-task -d build-all-the-targets {
