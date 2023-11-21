@@ -217,18 +217,17 @@ impl Engine {
 
         match result {
             Ok(pipeline_data) => {
-                let result;
-                if let PipelineData::ExternalStream {
+                let result = if let PipelineData::ExternalStream {
                     stdout: stream,
                     stderr: stderr_stream,
                     exit_code,
                     ..
                 } = pipeline_data
                 {
-                    result = print_if_stream(stream, stderr_stream, false, exit_code);
+                    print_if_stream(stream, stderr_stream, false, exit_code)
                 } else {
-                    result = pipeline_data.print(&self.engine_state, &mut self.stack, true, false);
-                }
+                    pipeline_data.drain_with_exit_code()
+                };
 
                 match result {
                     Err(err) => {
