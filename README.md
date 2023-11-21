@@ -12,6 +12,14 @@ Although it is currently a work-in-progress, here is a list of features we hope 
 - Exposed build script metadata via JSON to enable third-party tooling integration
 - Builds inside of hermetic filesystems to allow for "proofs", caching, etc.
 
+## Hacking
+
+While quake is currently in a very experimental state and subject to breaking changes without warning, you can play around with it now by cloning this repository and installing it with:
+
+``` sh
+cargo install --path crates/quake_cli
+```
+
 ## Demo
 
 quake projects are defined by a `build.quake` file in the root of the project, which is evaluated by quake's custom nushell engine when it is run.
