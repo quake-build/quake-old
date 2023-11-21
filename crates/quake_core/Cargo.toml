@@ -1,7 +1,9 @@
 [package]
 name = "quake_core"
 version = "0.1.0"
-edition = "2021"
+
+license.workspace = true
+edition.workspace = true
 
 [dependencies]
 quake_errors = { path = "../quake_errors" }

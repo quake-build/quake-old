@@ -17,7 +17,7 @@ Although it is currently a work-in-progress, here is a list of features we hope 
 While quake is currently in a very experimental state and subject to breaking changes without warning, you can play around with it now by cloning this repository and installing it with:
 
 ``` sh
-cargo install --path crates/quake_cli
+cargo install --path .
 ```
 
 ## Demo

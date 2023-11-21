@@ -1,7 +1,9 @@
 [package]
 name = "quake_engine"
 version = "0.1.0"
-edition = "2021"
+
+license.workspace = true
+edition.workspace = true
 
 [dependencies]
 quake_core = { path = "../quake_core" }
