@@ -118,7 +118,7 @@ impl Engine {
                 } => {
                     // bind the closure argument to the saved data, if it exists
                     if let Some(var) = argument {
-                        self.stack.vars.push(var.clone());
+                        self.stack.add_var(var.0, var.1.clone());
                     }
                     Some(*block_id)
                 }
