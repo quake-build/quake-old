@@ -37,8 +37,8 @@ fn main() -> Result<()> {
             .arg(
                 Arg::new("task")
                     .value_name("TASK")
-                    .required(true)
-                    .help("The task to run, in the form [SUBPROJECT]:<TASK>"),
+                    .required_unless_present("dry-run")
+                    .hide(true),
             )
             .subcommand_help_heading("Subcommands")
             .subcommands([
@@ -62,7 +62,6 @@ fn main() -> Result<()> {
                                  may or may not be current with this version of quake."
                             )),
                     ),
-                Command::new("validate").about("Validate all quake scripts in the current project"),
                 Command::new("inspect").about("Dump build script metadata as JSON"),
             ])
             .next_help_heading("Environment")
@@ -124,7 +123,7 @@ fn main() -> Result<()> {
                     .long("dry-run")
                     .action(ArgAction::SetTrue)
                     .group("operation")
-                    .help("Do not execute any tasks (useful for checking toolchains)"),
+                    .help("Do not execute any tasks (useful for validating build script)"),
                 Arg::new("force")
                     .short('F')
                     .long("force")
@@ -157,8 +156,10 @@ fn main() -> Result<()> {
 
     match matches.subcommand() {
         None => {
-            let task = matches.get_one::<String>("task").unwrap().clone();
-            engine.run(&task)?;
+            if !matches.get_flag("dry-run") {
+                let task = matches.get_one::<String>("task").unwrap().clone();
+                engine.run(&task)?;
+            }
         }
         Some(("list", _)) => {
             let metadata = engine.metadata();
