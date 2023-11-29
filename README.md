@@ -10,6 +10,7 @@ Although it is currently a work-in-progress, here is a list of features we hope 
 - Hot reloading support via file watchers and partial rebuilds
 - Interactive shell mode to debug build scripts
 - Exposed build script metadata via JSON to enable third-party tooling integration
+- Structured configuration system
 - Builds inside of hermetic filesystems to allow for "proofs", caching, etc.
 
 ## Hacking
