@@ -12,7 +12,7 @@ def rust-package [package: string] {
     }
 }
 
-def-task -d build {
+def-task build {} {
     rust-package my-package
 }
 

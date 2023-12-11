@@ -61,9 +61,8 @@ def-task render-docs {
     pandoc --quiet -s -o out.html in.md
 }
 
-# the -d flag is used here for convenience to indicate that the task is purely
-# declarative (i.e. has only a declaration block, and no task body)
-def-task -d bundle {
+# "declarative" task with no run body
+def-task bundle {} {
     depends compile
     depends render-docs
 }
@@ -77,6 +76,8 @@ def-task clean {
 When we run `quake bundle`, the tasks `compile` and `render-docs` will be run in order.
 Since we defined what artifacts the `render-docs` task sources and produces, it will compare the modification timestamps between those two sets of files to determine if the task needs to be run.
 We could do the same thing for the `compile` task as well, but in this case we'll just rely on cargo's internal mechanism for doing so.
+
+Syntax note: `def-task` can be used as either `def-task <task body>` or `def-task <decl body> <task body>`.
 
 ### Configuration
 
@@ -135,7 +136,7 @@ In quake, we call these *subtasks*, which consist only of a name and a run body.
 ```sh
 let targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
 
-def-task -d build-all-the-targets {
+def-task build-all-the-targets {} {
     for $t in $targets {
         $t | subtask $"build-($t)" {|t|
             cargo build --target $t

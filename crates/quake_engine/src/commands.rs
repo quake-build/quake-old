@@ -30,11 +30,6 @@ impl Command for DefTask {
             .required("name", SyntaxShape::String, "task name")
             .optional("decl_body", SyntaxShape::Block, "declarational body")
             .required("run_body", SyntaxShape::Block, "run body")
-            .switch(
-                "declarative",
-                "define a \"pure\" task with only a declaration body",
-                Some('d'),
-            )
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
 
@@ -47,16 +42,10 @@ impl Command for DefTask {
     ) -> Result<PipelineData, ShellError> {
         let name: Spanned<String> = call.req(engine_state, stack, 0)?;
 
-        let declarative = call.has_flag("declarative");
-
         let block_0: Block = call.req(engine_state, stack, 1)?;
-        let (decl_block, run_block) = if !declarative {
-            match call.opt(engine_state, stack, 2)? {
-                Some(block_1) => (Some(block_0), Some(block_1)),
-                None => (None, Some(block_0)),
-            }
-        } else {
-            (Some(block_0), None)
+        let (decl_block, run_block) = match call.opt(engine_state, stack, 2)? {
+            Some(block_1) => (Some(block_0), Some(block_1)),
+            None => (None, Some(block_0)),
         };
 
         let state = State::from_engine_state(engine_state).unwrap();

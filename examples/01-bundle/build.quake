@@ -13,7 +13,7 @@ def-task render-docs {
     pandoc --quiet -o out.html in.md
 }
 
-def-task -d bundle {
+def-task bundle {} {
     depends compile
     depends render-docs
 }
