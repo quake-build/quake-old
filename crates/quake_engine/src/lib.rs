@@ -211,6 +211,10 @@ impl Engine {
     }
 
     fn eval_block(&mut self, block: &Block) -> bool {
+        if block.is_empty() {
+            return true;
+        }
+
         let result = eval_block(
             &self.engine_state,
             &mut self.stack,
