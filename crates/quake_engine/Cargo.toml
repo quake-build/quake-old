@@ -20,3 +20,6 @@ nu-path = "0.87.1"
 nu-protocol = "0.87.1"
 parking_lot = "0.12.1"
 serde = "1.0.193"
+
+[target."cfg(windows)".dependencies]
+nu-utils = "0.88.1"

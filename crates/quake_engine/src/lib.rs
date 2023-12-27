@@ -254,7 +254,7 @@ impl Engine {
                 // reset vt processing, aka ansi because illbehaved externals can break it
                 #[cfg(windows)]
                 {
-                    let _ = enable_vt_processing();
+                    let _ = nu_utils::enable_vt_processing();
                 }
             }
             Err(err) => {

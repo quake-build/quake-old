@@ -1422,7 +1422,7 @@ dependencies = [
  "nu-parser",
  "nu-path",
  "nu-protocol",
- "nu-utils",
+ "nu-utils 0.87.1",
  "once_cell",
  "pathdiff",
  "percent-encoding",
@@ -1445,7 +1445,7 @@ dependencies = [
  "nu-parser",
  "nu-path",
  "nu-protocol",
- "nu-utils",
+ "nu-utils 0.87.1",
 ]
 
 [[package]]
@@ -1460,7 +1460,7 @@ dependencies = [
  "nu-engine",
  "nu-parser",
  "nu-protocol",
- "nu-utils",
+ "nu-utils 0.87.1",
  "shadow-rs",
 ]
 
@@ -1474,7 +1474,7 @@ dependencies = [
  "nu-engine",
  "nu-json",
  "nu-protocol",
- "nu-utils",
+ "nu-utils 0.87.1",
  "serde",
 ]
 
@@ -1531,7 +1531,7 @@ dependencies = [
  "nu-system",
  "nu-table",
  "nu-term-grid",
- "nu-utils",
+ "nu-utils 0.87.1",
  "num-format",
  "num-traits",
  "once_cell",
@@ -1579,7 +1579,7 @@ dependencies = [
  "nu-glob",
  "nu-path",
  "nu-protocol",
- "nu-utils",
+ "nu-utils 0.87.1",
 ]
 
 [[package]]
@@ -1650,7 +1650,7 @@ dependencies = [
  "miette",
  "nu-path",
  "nu-system",
- "nu-utils",
+ "nu-utils 0.87.1",
  "num-format",
  "serde",
  "serde_json",
@@ -1688,7 +1688,7 @@ dependencies = [
  "nu-color-config",
  "nu-engine",
  "nu-protocol",
- "nu-utils",
+ "nu-utils 0.87.1",
  "once_cell",
  "tabled",
 ]
@@ -1699,7 +1699,7 @@ version = "0.87.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219f69f6db2b3bfdac1a2ba0b432b4ed879de75ece8845116dda180355b4b806"
 dependencies = [
- "nu-utils",
+ "nu-utils 0.87.1",
  "unicode-width",
 ]
 
@@ -1708,6 +1708,21 @@ name = "nu-utils"
 version = "0.87.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2882bbce3815c3af8b73379ce82400f370e83d0a5879c4b30aedc8d0511fcb56"
+dependencies = [
+ "crossterm_winapi",
+ "log",
+ "lscolors",
+ "num-format",
+ "strip-ansi-escapes",
+ "sys-locale",
+ "unicase",
+]
+
+[[package]]
+name = "nu-utils"
+version = "0.88.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "339eed81dd7f6c59bcd14f9d9076f223c0aa0632b42e1efa60de1376f4fa04bd"
 dependencies = [
  "crossterm_winapi",
  "log",
@@ -2058,6 +2073,7 @@ dependencies = [
  "nu-parser",
  "nu-path",
  "nu-protocol",
+ "nu-utils 0.88.1",
  "parking_lot",
  "quake_core",
  "serde",
