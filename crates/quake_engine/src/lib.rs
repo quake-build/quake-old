@@ -1,9 +1,7 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
-use std::time::SystemTime;
 
-use glob::glob;
 use miette::bail;
 use nu_ansi_term::{Color, Style};
 use nu_cli::gather_parent_env_vars;
@@ -28,8 +26,8 @@ mod commands;
 mod metadata;
 mod state;
 
-mod helpers;
-pub use helpers::*;
+mod utils;
+pub use utils::*;
 
 /// The ID of the `$quake` variable, which holds the internal state of the
 /// program.
@@ -427,33 +425,4 @@ fn is_dirty(task: &Task) -> Result<bool> {
     let (sources, artifacts) = (expand_globs(&task.sources)?, expand_globs(&task.artifacts)?);
 
     Ok(latest_timestamp(&sources)? > latest_timestamp(&artifacts)?)
-}
-
-fn expand_globs(patterns: &[Spanned<String>]) -> Result<Vec<PathBuf>> {
-    let mut paths = vec![];
-
-    for ps in patterns
-        .iter()
-        .map(|s| glob(&s.item).into_diagnostic())
-        .collect::<Result<Vec<_>>>()?
-    {
-        paths.extend(
-            ps.into_iter()
-                .map(IntoDiagnostic::into_diagnostic)
-                .collect::<Result<Vec<_>>>()?,
-        );
-    }
-
-    Ok(paths)
-}
-
-fn latest_timestamp(paths: &[PathBuf]) -> Result<Option<SystemTime>> {
-    Ok(paths
-        .iter()
-        .map(Path::new)
-        .filter(|p| p.exists())
-        .map(|s| fs::metadata(s).and_then(|m| m.modified()).into_diagnostic())
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .max())
 }
