@@ -97,7 +97,7 @@ impl Engine {
                 // perform a dirty check, only if both sources and artifacts are
                 // defined
                 if !is_dirty(task)? {
-                    self.print_action("Skipping", &task.name.item);
+                    self.print_action(format!("skipping {}", &task.name.item));
                     continue;
                 }
             }
@@ -112,7 +112,7 @@ impl Engine {
                                      if parent.item == task.name.item)
                         })
                     {
-                        self.print_action("Running", &task.name.item);
+                        self.print_action(format!("starting {}", &task.name.item));
                     }
                     task.run_block
                 }
@@ -122,7 +122,7 @@ impl Engine {
                     argument,
                     ..
                 } => {
-                    self.print_action("Running", &name.item);
+                    self.print_action(format!("starting {}", &name.item));
 
                     // bind the closure argument to the saved data, if it exists
                     if let Some(var) = argument {
@@ -136,16 +136,16 @@ impl Engine {
                 let block = self.engine_state.get_block(run_block).clone();
                 if !self.eval_block(&block) {
                     let task_name = match run_task {
-                        RunTask::Task(task) => task.name.item.clone(),
-                        RunTask::Subtask { name, .. } => name.item.clone(),
+                        RunTask::Task(task) => &task.name.item,
+                        RunTask::Subtask { name, .. } => &name.item,
                     };
-                    self.print_error("Failed", &task_name);
+                    self.print_error(format!("failed {task_name}"));
                     return Ok(false);
                 }
             }
         }
 
-        self.print_action("Finished", task);
+        self.print_action(format!("finished {task}"));
 
         Ok(true)
     }
@@ -265,25 +265,20 @@ impl Engine {
         true
     }
 
-    fn print_action(&self, action: &str, message: &str) {
-        self.print_message(action, message, Color::Cyan);
+    fn print_action(&self, message: impl AsRef<str>) {
+        self.print_message(message.as_ref(), Color::White);
     }
 
-    fn print_error(&self, action: &str, message: &str) {
-        self.print_message(action, message, Color::LightRed);
+    fn print_error(&self, message: impl AsRef<str>) {
+        self.print_message(message.as_ref(), Color::LightRed);
     }
 
-    fn print_message(&self, prefix: &str, message: &str, color: Color) {
-        const MAX_ACTION_LENGTH: usize = 12;
-
+    #[inline]
+    fn print_message(&self, message: &str, color: Color) {
         if !self.options.quiet {
             eprintln!(
-                "{} {}",
-                Style::new()
-                    .bold()
-                    .fg(color)
-                    .paint(format!("{prefix:>MAX_ACTION_LENGTH$}")),
-                message
+                "{} {message}",
+                Style::new().fg(color).bold().paint("> quake:"),
             );
         }
     }
