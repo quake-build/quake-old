@@ -1,2 +1,5 @@
 imports_granularity = "Module"
 wrap_comments = true
+ignore = [
+    "nushell/",
+]

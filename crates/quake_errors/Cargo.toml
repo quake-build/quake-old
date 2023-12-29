@@ -7,7 +7,7 @@ edition.workspace = true
 
 [dependencies]
 miette = "5.10.0"
-nu-protocol = "0.87.1"
+nu-protocol = { path = "../../nushell/crates/nu-protocol" }
 serde = { version = "1.0.193", features = ["derive"], optional = true }
 thiserror = "1.0.50"
 

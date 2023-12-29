@@ -1,0 +1,3 @@
+[submodule "nushell"]
+	path = nushell
+	url = https://github.com/quake-build/nushell
