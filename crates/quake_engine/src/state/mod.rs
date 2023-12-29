@@ -113,13 +113,13 @@ impl CustomValue for StateVariable {
 
     fn to_base_value(&self, span: Span) -> std::result::Result<Value, ShellError> {
         // TODO implement this?
-        Err(ShellError::GenericError(
-            "`$quake` cannot be represented as a nushell value".to_owned(),
-            String::new(),
-            Some(span),
-            None,
-            Vec::new(),
-        ))
+        Err(ShellError::GenericError {
+            error: "`$quake` cannot be represented as a nushell value".to_owned(),
+            msg: String::new(),
+            span: Some(span),
+            help: None,
+            inner: Vec::new(),
+        })
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
