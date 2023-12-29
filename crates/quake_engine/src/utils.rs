@@ -4,6 +4,7 @@ use std::time::SystemTime;
 
 use glob::glob;
 use miette::IntoDiagnostic;
+use nu_ansi_term::{Color, Style};
 use nu_protocol::engine::{Stack, PWD_ENV};
 use nu_protocol::{Span, Spanned, Value};
 
@@ -49,4 +50,21 @@ pub fn latest_timestamp(paths: &[PathBuf]) -> Result<Option<SystemTime>> {
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .max())
+}
+
+pub fn print_info(prefix: &str, message: &str) {
+    print_message(prefix, message, Color::White);
+}
+
+pub fn print_error(prefix: &str, message: &str) {
+    print_message(prefix, message, Color::LightRed);
+}
+
+#[inline]
+fn print_message(prefix: &str, message: &str, color: Color) {
+    eprintln!(
+        "{} {}: {message}",
+        Style::new().fg(Color::DarkGray).paint(">"),
+        Style::new().fg(color).bold().paint(prefix),
+    );
 }

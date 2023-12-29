@@ -17,10 +17,10 @@ pub struct BuildScriptNotFound;
 
 // TODO add "did you mean?" or list available tasks
 #[derive(Debug, Clone, Error, Diagnostic)]
-#[error("Task not found: {task}")]
+#[error("Task not found: {name}")]
 #[diagnostic(code(quake::task::not_found))]
 pub struct TaskNotFound {
-    pub task: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Error, Diagnostic)]

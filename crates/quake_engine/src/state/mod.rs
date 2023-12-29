@@ -8,14 +8,14 @@ use serde::Serialize;
 
 use quake_core::prelude::*;
 
-use crate::metadata::{BuildMetadata, Task};
+use crate::metadata::{Metadata, Task};
 use crate::{Result, QUAKE_SCOPE_VARIABLE_ID, QUAKE_VARIABLE_ID};
 
 pub type ScopeId = usize;
 
 #[derive(Clone, Debug)]
 pub(crate) struct State {
-    pub metadata: BuildMetadata,
+    pub metadata: Metadata,
     scopes: HashMap<ScopeId, Scope>,
     next_scope_id: ScopeId,
 }
@@ -23,13 +23,13 @@ pub(crate) struct State {
 impl State {
     pub fn new() -> Self {
         State {
-            metadata: BuildMetadata::new(),
+            metadata: Metadata::new(),
             scopes: HashMap::new(),
             next_scope_id: 0,
         }
     }
 
-    pub fn from_engine_state(engine_state: &EngineState) -> Result<Arc<Mutex<Self>>> {
+    pub fn from_engine_state(engine_state: &EngineState) -> Arc<Mutex<Self>> {
         get_state(engine_state)
     }
 
@@ -135,11 +135,11 @@ impl CustomValue for StateVariable {
     }
 }
 
-fn get_state(engine_state: &EngineState) -> Result<Arc<Mutex<State>>> {
+fn get_state(engine_state: &EngineState) -> Arc<Mutex<State>> {
     if let Some(Value::CustomValue { val, .. }) = &engine_state.get_var(QUAKE_VARIABLE_ID).const_val
     {
         if let Some(state) = val.as_any().downcast_ref::<StateVariable>().cloned() {
-            return Ok(state.0);
+            return state.0;
         }
     }
 

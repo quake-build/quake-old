@@ -7,7 +7,7 @@ use nu_protocol::{
 
 use quake_core::prelude::IntoShellError;
 
-use crate::metadata::{Dependency, Task};
+use crate::metadata::{Task, TaskKind};
 use crate::state::{Scope, State};
 
 const QUAKE_CATEGORY: &str = "quake";
@@ -28,6 +28,11 @@ impl Command for DefTask {
         Signature::build("def-task")
             .input_output_types(vec![(Type::Nothing, Type::String)])
             .required("name", SyntaxShape::String, "task name")
+            .switch(
+                "concurrent",
+                "allow this task to be run concurrently with others",
+                Some('c'),
+            )
             .optional("decl_body", SyntaxShape::Block, "declarational body")
             .required("run_body", SyntaxShape::Block, "run body")
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
@@ -44,13 +49,18 @@ impl Command for DefTask {
 
         let block_0: Block = call.req(engine_state, stack, 1)?;
         let (decl_block, run_block) = match call.opt(engine_state, stack, 2)? {
-            Some(block_1) => (Some(block_0), Some(block_1)),
-            None => (None, Some(block_0)),
+            Some(block_1) => (Some(block_0), block_1),
+            None => (None, block_0),
         };
 
-        let state = State::from_engine_state(engine_state).unwrap();
+        let state = State::from_engine_state(engine_state);
 
-        let task = Task::new(name.clone(), run_block.map(|b| b.block_id));
+        let task = Task::new(
+            name.clone(),
+            TaskKind::Global,
+            Some(run_block.block_id),
+            call.has_flag("concurrent"),
+        );
         if let Some(block) = &decl_block {
             state
                 .lock()
@@ -64,13 +74,9 @@ impl Command for DefTask {
                 .pop_scope(stack, call.span())
                 .map_err(IntoShellError::into_shell_error)?
                 .task;
-            state.metadata.tasks.insert(task.name.item.clone(), task);
+            state.metadata.register_task(task);
         } else {
-            state
-                .lock()
-                .metadata
-                .tasks
-                .insert(task.name.item.clone(), task);
+            state.lock().metadata.register_task(task);
         }
 
         Ok(PipelineData::Value(
@@ -99,6 +105,11 @@ impl Command for Subtask {
         Signature::build("subtask")
             .input_output_types(vec![(Type::Any, Type::String)])
             .required("name", SyntaxShape::String, "subtask name")
+            .switch(
+                "concurrent",
+                "allow this task to be run concurrently with others",
+                Some('c'),
+            )
             .required(
                 "run_body",
                 SyntaxShape::Closure(Some(vec![SyntaxShape::Any])),
@@ -123,26 +134,34 @@ impl Command for Subtask {
 
         let block = engine_state.get_block(closure.block_id);
 
-        let argument = block
-            .signature
-            .required_positional
-            .first()
-            .and_then(|arg| arg.var_id)
-            .map(|v| (v, input.into_value(span)));
-
-        let state = State::from_engine_state(engine_state).unwrap();
+        let state = State::from_engine_state(engine_state);
         {
             let mut state = state.lock();
+
+            let mut subtask = Task::new(
+                name.clone(),
+                TaskKind::Subtask,
+                Some(closure.block_id),
+                call.has_flag("concurrent"),
+            );
+
+            if let Some(argument) = block
+                .signature
+                .required_positional
+                .first()
+                .and_then(|arg| arg.var_id)
+                .map(|v| (v, input.into_value(span)))
+            {
+                subtask.argument = Some(argument);
+            }
+
+            let subtask_id = state.metadata.register_task(subtask);
+
             let task = &mut state
                 .get_scope_mut(stack, span)
                 .map_err(IntoShellError::into_shell_error)?
                 .task;
-            task.dependencies.push(Dependency::Subtask {
-                parent: task.name.clone(),
-                name: name.clone(),
-                block_id: closure.block_id,
-                argument,
-            });
+            task.dependencies.push(subtask_id);
         }
 
         Ok(PipelineData::Value(
@@ -185,14 +204,20 @@ impl Command for Depends {
 
         let dep: Spanned<String> = call.req(engine_state, stack, 0)?;
 
-        let state = State::from_engine_state(engine_state).unwrap();
-        state
-            .lock()
-            .get_scope_mut(stack, span)
-            .map_err(IntoShellError::into_shell_error)?
-            .task
-            .dependencies
-            .push(Dependency::Task(dep));
+        let state = State::from_engine_state(engine_state);
+        {
+            let mut state = state.lock();
+            let dep_id = state
+                .metadata
+                .get_global_task_id(&dep.item)
+                .map_err(IntoShellError::into_shell_error)?;
+            state
+                .get_scope_mut(stack, span)
+                .map_err(IntoShellError::into_shell_error)?
+                .task
+                .dependencies
+                .push(dep_id);
+        }
 
         Ok(PipelineData::empty())
     }
@@ -232,8 +257,7 @@ impl Command for Sources {
 
         let values: Vec<Spanned<String>> = call.req(engine_state, stack, 0)?;
 
-        let state = State::from_engine_state(engine_state).unwrap();
-        state
+        State::from_engine_state(engine_state)
             .lock()
             .get_scope_mut(stack, span)
             .map_err(IntoShellError::into_shell_error)?
@@ -279,8 +303,7 @@ impl Command for Produces {
 
         let values: Vec<Spanned<String>> = call.req(engine_state, stack, 0)?;
 
-        let state = State::from_engine_state(engine_state).unwrap();
-        state
+        State::from_engine_state(engine_state)
             .lock()
             .get_scope_mut(stack, span)
             .map_err(IntoShellError::into_shell_error)?

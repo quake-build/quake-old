@@ -14,7 +14,8 @@ fn parse_config_property(s: &str) -> Result<(String, String)> {
     Ok((s[..pos].to_owned(), s[pos + 1..].to_owned()))
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let online_docs_url = option_env!("QUAKE_ONLINE_DOCS").unwrap_or("https://docs.quake.build/");
     let _offline_docs_url = option_env!("QUAKE_OFFLINE_DOCS");
 
@@ -158,12 +159,15 @@ fn main() -> Result<()> {
         None => {
             if !matches.get_flag("dry-run") {
                 let task = matches.get_one::<String>("task").unwrap().clone();
-                engine.run(&task)?;
+                engine.run(&task).await?;
             }
         }
         Some(("list", _)) => {
             let metadata = engine.metadata();
-            let tasks = metadata.tasks.keys();
+            let tasks: Vec<_> = metadata
+                .global_tasks()
+                .filter_map(|t| t.name.as_ref().map(|s| &s.item))
+                .collect();
 
             if tasks.is_empty() {
                 println!("No available tasks.");

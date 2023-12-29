@@ -19,7 +19,8 @@ nu-parser = { path = "../../nushell/crates/nu-parser" }
 nu-path = { path = "../../nushell/crates/nu-path" }
 nu-protocol = { path = "../../nushell/crates/nu-protocol" }
 parking_lot = "0.12.1"
-serde = "1.0.193"
+serde = { version = "1.0.193", features = ["rc"] }
+tokio = { version = "1.35.1", features = ["full"] }
 
 [target."cfg(windows)".dependencies]
 nu-utils = { path = "../../nushell/crates/nu-utils" }
