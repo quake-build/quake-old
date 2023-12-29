@@ -2599,7 +2599,6 @@ dependencies = [
  "quake_core",
  "quake_engine",
  "serde_json",
- "tokio",
 ]
 
 [[package]]

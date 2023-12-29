@@ -20,6 +20,7 @@ use nu_protocol::{
 };
 use parking_lot::{Mutex, MutexGuard};
 use run_tree::RunNode;
+use tokio::runtime::Runtime;
 use tokio::task::{AbortHandle, JoinSet};
 
 use quake_core::prelude::*;
@@ -157,7 +158,7 @@ impl Engine {
         MutexGuard::map(self.internal_state.lock(), |s| &mut s.metadata)
     }
 
-    pub async fn run(&mut self, task: &str) -> Result<bool> {
+    pub fn run(&mut self, task: &str) -> Result<()> {
         let build_tree = {
             let metadata = self.metadata();
             let task_id = metadata.get_global_task_id(task)?;
@@ -194,24 +195,30 @@ impl Engine {
             };
         }
 
-        // initialize first task(s)
-        spawn_tasks!();
+        let runtime = Runtime::new().into_diagnostic()?;
+        _ = runtime.enter();
 
-        // join tasks and continue to add more
-        while let Some(result) = self.task_pool.join_next().await {
-            let (task_id, success) = result.unwrap()?;
+        // run the main loop
+        runtime.block_on(async move {
+            // initialize first task(s)
+            spawn_tasks!();
 
-            self.handles.lock().remove(&task_id);
+            // join tasks and continue to add more
+            while let Some(result) = self.task_pool.join_next().await {
+                let (task_id, success) = result.unwrap()?;
 
-            if !success {
-                self.abort_all();
-                exit(1);
+                self.handles.lock().remove(&task_id);
+
+                if !success {
+                    self.abort_all();
+                    exit(1);
+                }
+
+                spawn_tasks!();
             }
 
-            spawn_tasks!();
-        }
-
-        Ok(true)
+            Ok(())
+        })
     }
 
     fn spawn_task(&mut self, node: &RunNode) -> Result<()> {
@@ -298,65 +305,6 @@ impl Engine {
     }
 }
 
-fn eval_block(
-    block: &Block,
-    engine_state: &EngineState,
-    stack: &mut Stack,
-) -> std::result::Result<bool, ShellError> {
-    if block.is_empty() {
-        return Ok(true);
-    }
-
-    let result = nu_engine::eval_block_with_early_return(
-        engine_state,
-        stack,
-        block,
-        PipelineData::Empty,
-        false,
-        false,
-    );
-
-    match result {
-        Ok(pipeline_data) => {
-            let result = if let PipelineData::ExternalStream {
-                stdout: stream,
-                stderr: stderr_stream,
-                exit_code,
-                ..
-            } = pipeline_data
-            {
-                print_if_stream(stream, stderr_stream, false, exit_code)
-            } else {
-                pipeline_data.drain_with_exit_code()
-            };
-
-            match result {
-                Ok(exit_code) => {
-                    set_last_exit_code(stack, exit_code);
-                    if exit_code != 0 {
-                        return Ok(false);
-                    }
-                }
-                Err(err) => {
-                    return Err(err);
-                }
-            }
-
-            // reset vt processing, aka ansi because illbehaved externals can break it
-            #[cfg(windows)]
-            {
-                let _ = nu_utils::enable_vt_processing();
-            }
-        }
-        Err(err) => {
-            set_last_exit_code(stack, 1);
-            return Err(err);
-        }
-    }
-
-    Ok(true)
-}
-
 fn create_engine_state(state: Arc<Mutex<State>>) -> Result<EngineState> {
     let mut engine_state = add_shell_command_context(create_default_context());
 
@@ -424,6 +372,65 @@ fn create_stack(cwd: impl AsRef<Path>) -> Stack {
     stack.add_var(QUAKE_SCOPE_VARIABLE_ID, Value::int(-1, Span::unknown()));
 
     stack
+}
+
+fn eval_block(
+    block: &Block,
+    engine_state: &EngineState,
+    stack: &mut Stack,
+) -> std::result::Result<bool, ShellError> {
+    if block.is_empty() {
+        return Ok(true);
+    }
+
+    let result = nu_engine::eval_block_with_early_return(
+        engine_state,
+        stack,
+        block,
+        PipelineData::Empty,
+        false,
+        false,
+    );
+
+    match result {
+        Ok(pipeline_data) => {
+            let result = if let PipelineData::ExternalStream {
+                stdout: stream,
+                stderr: stderr_stream,
+                exit_code,
+                ..
+            } = pipeline_data
+            {
+                print_if_stream(stream, stderr_stream, false, exit_code)
+            } else {
+                pipeline_data.drain_with_exit_code()
+            };
+
+            match result {
+                Ok(exit_code) => {
+                    set_last_exit_code(stack, exit_code);
+                    if exit_code != 0 {
+                        return Ok(false);
+                    }
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+            }
+
+            // reset vt processing, aka ansi because illbehaved externals can break it
+            #[cfg(windows)]
+            {
+                let _ = nu_utils::enable_vt_processing();
+            }
+        }
+        Err(err) => {
+            set_last_exit_code(stack, 1);
+            return Err(err);
+        }
+    }
+
+    Ok(true)
 }
 
 fn is_dirty(task: &Task) -> Result<bool> {
