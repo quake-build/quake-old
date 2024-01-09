@@ -1,11 +1,6 @@
 [workspace]
-resolver = "2"
 members = [
     "crates/*",
-]
-exclude = [
-    "examples/",
-    "nushell/"
 ]
 
 [workspace.package]

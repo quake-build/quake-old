@@ -11,16 +11,16 @@ quake_core = { path = "../quake_core" }
 glob = "0.3.1"
 miette = "5.10.0"
 nu-ansi-term = "0.49.0"
-nu-cli = { path = "../../nushell/crates/nu-cli" }
-nu-cmd-lang = { path = "../../nushell/crates/nu-cmd-lang" }
-nu-command = { path = "../../nushell/crates/nu-command", features = ["which-support"] }
-nu-engine = { path = "../../nushell/crates/nu-engine" }
-nu-parser = { path = "../../nushell/crates/nu-parser" }
-nu-path = { path = "../../nushell/crates/nu-path" }
-nu-protocol = { path = "../../nushell/crates/nu-protocol" }
+nu-cli = { path = "../../ext/nushell/crates/nu-cli" }
+nu-cmd-lang = { path = "../../ext/nushell/crates/nu-cmd-lang" }
+nu-command = { path = "../../ext/nushell/crates/nu-command", features = ["which-support"] }
+nu-engine = { path = "../../ext/nushell/crates/nu-engine" }
+nu-parser = { path = "../../ext/nushell/crates/nu-parser" }
+nu-path = { path = "../../ext/nushell/crates/nu-path" }
+nu-protocol = { path = "../../ext/nushell/crates/nu-protocol" }
 parking_lot = "0.12.1"
 serde = { version = "1.0.193", features = ["rc"] }
 tokio = { version = "1.35.1", features = ["full"] }
 
 [target."cfg(windows)".dependencies]
-nu-utils = { path = "../../nushell/crates/nu-utils" }
+nu-utils = { path = "../../ext/nushell/crates/nu-utils" }
