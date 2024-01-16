@@ -7,7 +7,7 @@ edition.workspace = true
 
 [dependencies]
 miette = "5.10.0"
-nu-protocol = { path = "../../ext/nushell/crates/nu-protocol" }
+nu-protocol = { git = "https://github.com/quake-build/nushell" }
 serde = { version = "1.0.193", features = ["derive"], optional = true }
 thiserror = "1.0.50"
 
