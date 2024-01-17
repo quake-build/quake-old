@@ -13,3 +13,6 @@ thiserror = "1.0.50"
 
 [features]
 serde = ["dep:serde"]
+
+[lints]
+workspace = true
