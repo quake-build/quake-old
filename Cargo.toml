@@ -7,6 +7,9 @@ members = [
 license = "MIT"
 edition = "2021"
 
+[workspace.lints.rustdoc]
+redundant_explicit_links = "allow"
+
 [package]
 name = "quake"
 version = "0.1.0"

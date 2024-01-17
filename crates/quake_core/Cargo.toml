@@ -7,3 +7,6 @@ edition.workspace = true
 
 [dependencies]
 quake_errors = { path = "../quake_errors" }
+
+[lints]
+workspace = true
