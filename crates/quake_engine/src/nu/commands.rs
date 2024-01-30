@@ -1,16 +1,11 @@
-use nu_engine::{eval_block, CallExt};
+use nu_engine::CallExt;
 use nu_protocol::ast::Call;
-use nu_protocol::engine::{Block, Closure, Command, EngineState, Stack};
+use nu_protocol::engine::{Closure, Command, EngineState, Stack};
 use nu_protocol::{
     Category, PipelineData, ShellError, Signature, Spanned, SyntaxShape, Type, Value,
 };
 
-use quake_core::prelude::IntoShellError;
-
-use crate::metadata::{Task, TaskKind};
-use crate::state::{Scope, State};
-
-const QUAKE_CATEGORY: &str = "quake";
+use crate::QUAKE_CATEGORY;
 
 #[derive(Clone)]
 pub struct DefTask;
@@ -26,66 +21,45 @@ impl Command for DefTask {
 
     fn signature(&self) -> Signature {
         Signature::build("def-task")
-            .input_output_types(vec![(Type::Nothing, Type::String)])
+            .input_output_types(vec![(Type::Nothing, Type::Nothing)])
             .required("name", SyntaxShape::String, "task name")
             .switch(
                 "concurrent",
                 "allow this task to be run concurrently with others",
                 Some('c'),
             )
-            .optional("decl_body", SyntaxShape::Block, "declarational body")
-            .required("run_body", SyntaxShape::Block, "run body")
+            // HACK this should be a SyntaxShape::Signature, but declaring it as such here causes
+            // the second, optional body to get passed over, so we use a close enough syntactical
+            // approximation (a list of strings) and re-parse the span manually as a signature after
+            // the initial parsing pass
+            .required(
+                "params",
+                SyntaxShape::List(Box::new(SyntaxShape::String)),
+                "parameters",
+            )
+            .required(
+                "first_body",
+                SyntaxShape::Block,
+                "run body, or decl body if two blocks are provided",
+            )
+            .optional(
+                "second_body",
+                SyntaxShape::Block,
+                "run body if two blocks are provided",
+            )
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
 
     fn run(
         &self,
-        engine_state: &EngineState,
-        stack: &mut Stack,
-        call: &Call,
-        input: PipelineData,
+        _engine_state: &EngineState,
+        _stack: &mut Stack,
+        _call: &Call,
+        _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let name: Spanned<String> = call.req(engine_state, stack, 0)?;
-
-        let block_0: Block = call.req(engine_state, stack, 1)?;
-        let (decl_block, run_block) = match call.opt(engine_state, stack, 2)? {
-            Some(block_1) => (Some(block_0), block_1),
-            None => (None, block_0),
-        };
-
-        let state = State::from_engine_state(engine_state);
-
-        let task = Task::new(
-            name.clone(),
-            TaskKind::Global,
-            Some(run_block.block_id),
-            call.has_flag("concurrent"),
-        );
-        if let Some(block) = &decl_block {
-            state
-                .lock()
-                .push_scope(Scope::new(task), stack, call.span());
-
-            let block = engine_state.get_block(block.block_id);
-            eval_block(engine_state, stack, block, input, false, false)?;
-
-            let mut state = state.lock();
-            let task = state
-                .pop_scope(stack, call.span())
-                .map_err(IntoShellError::into_shell_error)?
-                .task;
-            state.metadata.register_task(task);
-        } else {
-            state.lock().metadata.register_task(task);
-        }
-
-        Ok(PipelineData::Value(
-            Value::String {
-                val: name.item,
-                internal_span: name.span,
-            },
-            None,
-        ))
+        // (parser internal)
+        // TODO error here? should be erased
+        Ok(PipelineData::Empty)
     }
 }
 
@@ -123,46 +97,46 @@ impl Command for Subtask {
         engine_state: &EngineState,
         stack: &mut Stack,
         call: &Call,
-        input: PipelineData,
+        _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let span = call.span();
+        let _span = call.span();
 
         let (name, closure) = (
             call.req::<Spanned<String>>(engine_state, stack, 0)?,
             call.req::<Closure>(engine_state, stack, 1)?,
         );
 
-        let block = engine_state.get_block(closure.block_id);
+        let _block = engine_state.get_block(closure.block_id);
 
-        let state = State::from_engine_state(engine_state);
-        {
-            let mut state = state.lock();
+        // let state = State::from_engine_state(engine_state);
+        // {
+        //     let mut state = state.lock();
 
-            let mut subtask = Task::new(
-                name.clone(),
-                TaskKind::Subtask,
-                Some(closure.block_id),
-                call.has_flag("concurrent"),
-            );
+        //     let mut subtask = TaskMetadata::new(
+        //         name.clone(),
+        //         TaskKind::Subtask,
+        //         Some(closure.block_id),
+        //         call.has_flag("concurrent"),
+        //     );
 
-            if let Some(argument) = block
-                .signature
-                .required_positional
-                .first()
-                .and_then(|arg| arg.var_id)
-                .map(|v| (v, input.into_value(span)))
-            {
-                subtask.argument = Some(argument);
-            }
+        //     if let Some(argument) = block
+        //         .signature
+        //         .required_positional
+        //         .first()
+        //         .and_then(|arg| arg.var_id)
+        //         .map(|v| (v, input.into_value(span)))
+        //     {
+        //         subtask.argument = Some(argument);
+        //     }
 
-            let subtask_id = state.metadata.register_task(subtask);
+        //     let subtask_id = state.metadata.register_task(subtask);
 
-            let task = &mut state
-                .get_scope_mut(stack, span)
-                .map_err(IntoShellError::into_shell_error)?
-                .task;
-            task.dependencies.push(subtask_id);
-        }
+        //     let task = &mut state
+        //         .get_scope_mut(stack, span)
+        //         .map_err(IntoShellError::into_shell_error)?
+        //         .task;
+        //     task.dependencies.push(subtask_id);
+        // }
 
         Ok(PipelineData::Value(
             Value::String {
@@ -186,6 +160,12 @@ impl Command for Depends {
         Signature::build("depends")
             .input_output_types(vec![(Type::Nothing, Type::Nothing)])
             .required("dep_id", SyntaxShape::String, "dependency ID")
+            .rest(
+                "args",
+                SyntaxShape::Any,
+                "arguments to pass into the dependency",
+            )
+            .allows_unknown_args()
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
 
@@ -200,24 +180,24 @@ impl Command for Depends {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let span = call.span();
+        let _span = call.span();
 
-        let dep: Spanned<String> = call.req(engine_state, stack, 0)?;
+        let _dep: Spanned<String> = call.req(engine_state, stack, 0)?;
 
-        let state = State::from_engine_state(engine_state);
-        {
-            let mut state = state.lock();
-            let dep_id = state
-                .metadata
-                .get_global_task_id(&dep.item)
-                .map_err(IntoShellError::into_shell_error)?;
-            state
-                .get_scope_mut(stack, span)
-                .map_err(IntoShellError::into_shell_error)?
-                .task
-                .dependencies
-                .push(dep_id);
-        }
+        // let state = State::from_engine_state(engine_state);
+        // {
+        //     let mut state = state.lock();
+        //     let dep_id = state
+        //         .metadata
+        //         .get_public_task_id(&dep.item)
+        //         .map_err(IntoShellError::into_shell_error)?;
+        //     state
+        //         .get_scope_mut(stack, span)
+        //         .map_err(IntoShellError::into_shell_error)?
+        //         .task
+        //         .dependencies
+        //         .push(dep_id);
+        // }
 
         Ok(PipelineData::empty())
     }
@@ -253,17 +233,17 @@ impl Command for Sources {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let span = call.span();
+        let _span = call.span();
 
-        let values: Vec<Spanned<String>> = call.req(engine_state, stack, 0)?;
+        let _values: Vec<String> = call.req(engine_state, stack, 0)?;
 
-        State::from_engine_state(engine_state)
-            .lock()
-            .get_scope_mut(stack, span)
-            .map_err(IntoShellError::into_shell_error)?
-            .task
-            .sources
-            .extend(values);
+        // State::from_engine_state(engine_state)
+        //     .lock()
+        //     .get_scope_mut(stack, span)
+        //     .map_err(IntoShellError::into_shell_error)?
+        //     .task
+        //     .sources
+        //     .extend(values);
 
         Ok(PipelineData::empty())
     }
@@ -299,17 +279,17 @@ impl Command for Produces {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let span = call.span();
+        let _span = call.span();
 
-        let values: Vec<Spanned<String>> = call.req(engine_state, stack, 0)?;
+        let _values: Vec<String> = call.req(engine_state, stack, 0)?;
 
-        State::from_engine_state(engine_state)
-            .lock()
-            .get_scope_mut(stack, span)
-            .map_err(IntoShellError::into_shell_error)?
-            .task
-            .artifacts
-            .extend(values);
+        // State::from_engine_state(engine_state)
+        //     .lock()
+        //     .get_scope_mut(stack, span)
+        //     .map_err(IntoShellError::into_shell_error)?
+        //     .task
+        //     .artifacts
+        //     .extend(values);
 
         Ok(PipelineData::empty())
     }

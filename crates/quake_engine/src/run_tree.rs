@@ -1,23 +1,23 @@
 use std::collections::HashSet;
 
-use crate::metadata::{Metadata, TaskId};
+use crate::metadata::{Metadata, TaskCallId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunNode {
-    pub task_id: TaskId,
+    pub call_id: TaskCallId,
     pub children: Vec<RunNode>,
 }
 
 impl RunNode {
-    pub fn new(id: TaskId) -> Self {
+    pub fn new(call_id: TaskCallId) -> Self {
         Self {
-            task_id: id,
+            call_id,
             children: Vec::new(),
         }
     }
 
     /// Flatten the run tree in order of execution.
-    pub fn flatten(&self) -> Vec<&RunNode> {
+    pub fn flatten(&self) -> Vec<&Self> {
         let mut nodes = Vec::with_capacity(32);
         for child in &self.children {
             nodes.extend(child.flatten());
@@ -27,14 +27,13 @@ impl RunNode {
     }
 
     /// Locate a subtree within this tree.
-    #[allow(dead_code)]
-    pub fn locate(&self, task_id: TaskId) -> Option<&RunNode> {
-        if self.task_id == task_id {
+    pub fn locate(&self, call_id: TaskCallId) -> Option<&Self> {
+        if self.call_id == call_id {
             return Some(self);
         }
 
         for child in &self.children {
-            if let Some(node) = child.locate(task_id) {
+            if let Some(node) = child.locate(call_id) {
                 return Some(node);
             }
         }
@@ -43,22 +42,27 @@ impl RunNode {
     }
 }
 
-pub fn generate_run_tree(task: TaskId, metadata: &Metadata) -> RunNode {
+pub fn generate_run_tree(task: TaskCallId, metadata: &Metadata) -> RunNode {
     let mut included = HashSet::new();
     generate_run_tree_inner(task, metadata, &mut included)
 }
 
 fn generate_run_tree_inner(
-    task_id: TaskId,
+    call_id: TaskCallId,
     metadata: &Metadata,
-    included: &mut HashSet<TaskId>,
+    included: &mut HashSet<TaskCallId>,
 ) -> RunNode {
-    included.insert(task_id);
+    included.insert(call_id);
 
-    let mut node = RunNode::new(task_id);
+    let mut node = RunNode::new(call_id);
 
-    let task = metadata.get_task(task_id).expect("invalid task ID");
-    for dep in &task.dependencies {
+    let call = metadata.get_task_call(call_id).expect("invalid task ID");
+
+    let Some(call_metadata) = call.metadata.as_ref() else {
+        return node;
+    };
+
+    for dep in &call_metadata.dependencies {
         if included.contains(dep) {
             continue;
         }

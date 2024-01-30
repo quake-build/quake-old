@@ -24,12 +24,32 @@ pub struct TaskNotFound {
 }
 
 #[derive(Debug, Clone, Error, Diagnostic)]
+#[error("Task already defined: {name}")]
+#[diagnostic(code(quake::task::duplicate_definition))]
+pub struct TaskDuplicateDefinition {
+    pub name: String,
+    #[label("first defined here")]
+    pub existing_span: Span,
+}
+
+#[derive(Debug, Clone, Error, Diagnostic)]
 #[error("Unknown scope")]
 #[diagnostic(
     code(quake::scope::unknown),
     help("Did you mean to evaluate this command inside of a special scope block? (e.g. def-task)")
 )]
 pub struct UnknownScope {
+    #[label("command used here")]
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Error, Diagnostic)]
+#[error("Attempt to define nested task scopes")]
+#[diagnostic(
+    code(quake::scope::no_nested_scopes),
+    help("Define this task in the outer scope instead, or use `subtask`")
+)]
+pub struct NestedScopes {
     #[label("command used here")]
     pub span: Span,
 }

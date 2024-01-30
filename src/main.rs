@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 
 use quake_core::prelude::*;
+use quake_engine::utils::get_init_cwd;
 use quake_engine::*;
 
-/// Parse a config property consisting of a single key-value pair in the form
-/// `PROPERTY=VALUE`.
+/// Parse a config property consisting of a single key-value pair in the form `PROPERTY=VALUE`.
 fn parse_config_property(s: &str) -> Result<(String, String)> {
     let pos = s
         .find('=')
@@ -27,7 +27,7 @@ fn main() -> Result<()> {
             .color(ColorChoice::Never)
             .max_term_width(100)
             .override_usage(
-                "quake [OPTIONS] <TASK>\n       \
+                "quake [OPTIONS] <TASK> [ARGS]\n       \
                  quake [OPTIONS] <SUBCOMMAND>",
             )
             .arg_required_else_help(true)
@@ -135,6 +135,7 @@ fn main() -> Result<()> {
                     .action(ArgAction::SetTrue)
                     .help("Retrigger tasks when sources have changed"),
             ])
+            .arg(Arg::new("task-args"))
             .get_matches()
     };
 
@@ -158,15 +159,12 @@ fn main() -> Result<()> {
         None => {
             if !matches.get_flag("dry-run") {
                 let task = matches.get_one::<String>("task").unwrap().clone();
-                engine.run(&task)?;
+                engine.run(&task, vec![])?;
             }
         }
         Some(("list", _)) => {
             let metadata = engine.metadata();
-            let tasks: Vec<_> = metadata
-                .global_tasks()
-                .filter_map(|t| t.name.as_ref().map(|s| &s.item))
-                .collect();
+            let tasks: Vec<_> = metadata.task_stubs().map(|t| &t.name.item).collect();
 
             if tasks.is_empty() {
                 println!("No available tasks.");

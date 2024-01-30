@@ -24,3 +24,7 @@ quake_engine = { path = "crates/quake_engine" }
 
 clap = { version = "4.4.8", features = ["cargo", "wrap_help"] }
 serde_json = "1.0.108"
+
+[[bin]]
+name = "quake"
+path = "src/main.rs"
