@@ -8,53 +8,32 @@ use std::process::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use nu::eval::eval_task_run_body;
 use nu_parser::parse;
 use nu_protocol::ast::Argument;
 use nu_protocol::engine::{EngineState, Stack, StateWorkingSet};
-use nu_protocol::{report_error, report_error_new, ShellError, Span, VarId};
+use nu_protocol::{report_error, report_error_new, ShellError, Span};
 use parking_lot::{Mutex, MutexGuard};
-use parse::parse_def_tasks;
 use tokio::runtime::Runtime;
 use tokio::task::{AbortHandle, JoinSet};
 
 use quake_core::exit_codes;
 use quake_core::prelude::*;
 
-use crate::eval::{eval_block, eval_task_decl_body};
 use crate::metadata::{Metadata, TaskCallId};
+use crate::nu::eval::{eval_block, eval_task_decl_body, eval_task_run_body};
+use crate::nu::parse::parse_def_tasks;
 use crate::nu::{create_engine_state, create_stack};
 use crate::run_tree::{generate_run_tree, RunNode};
 use crate::state::State;
 use crate::utils::*;
-
-pub(crate) mod nu;
-pub(crate) use nu::{eval, parse};
 
 mod state;
 pub use state::metadata;
 
 pub mod utils;
 
+mod nu;
 mod run_tree;
-
-/// The ID of the `$quake` variable, which holds the internal state of the program.
-///
-/// The value of this constant is the next available variable ID after the first five that are
-/// reserved by nushell. If for some reason this should change in the future, this discrepancy
-/// should be noticed by an assertion following the registration of the variable into the working
-/// set.
-pub const QUAKE_VARIABLE_ID: VarId = 5;
-
-/// The ID of the `$quake_scope` variable, which is set inside evaluated blocks in order to retrieve
-/// scoped state from the global state.
-pub const QUAKE_SCOPE_VARIABLE_ID: VarId = 6;
-
-/// The custom nushell [`Category`](::nu_protocol::Category) assigned to quake items.
-pub const QUAKE_CATEGORY: &str = "quake";
-
-/// The custom nushell [`Category`](::nu_protocol::Category) assigned to internal quake items.
-pub const QUAKE_INTERNAL_CATEGORY: &str = "quake";
 
 #[derive(Debug, Clone)]
 pub struct Options {

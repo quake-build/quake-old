@@ -10,7 +10,8 @@ use serde::Serialize;
 use quake_core::prelude::*;
 
 use crate::metadata::{Metadata, TaskCallMetadata};
-use crate::{Result, QUAKE_SCOPE_VARIABLE_ID, QUAKE_VARIABLE_ID};
+use crate::nu::{QUAKE_SCOPE_VARIABLE_ID, QUAKE_VARIABLE_ID};
+use crate::Result;
 
 pub mod metadata;
 
@@ -103,6 +104,7 @@ impl Scope {
     }
 }
 
+#[inline(always)]
 fn get_state(engine_state: &EngineState) -> Arc<Mutex<State>> {
     if let Some(Value::CustomValue { val, .. }) = &engine_state.get_var(QUAKE_VARIABLE_ID).const_val
     {
@@ -118,6 +120,7 @@ fn get_state(engine_state: &EngineState) -> Arc<Mutex<State>> {
     panic!("could not fetch internal state")
 }
 
+#[inline(always)]
 fn get_scope_id(stack: &Stack, span: Span) -> Result<ScopeId> {
     if let Value::Int { val, .. } = stack.get_var(QUAKE_SCOPE_VARIABLE_ID, span)? {
         if let Ok(val) = val.try_into() {

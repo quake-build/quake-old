@@ -136,7 +136,7 @@ impl Metadata {
         self.task_calls[call_id].metadata = None;
     }
 
-    pub fn get_task_stub(&self, task_id: TaskStubId) -> Option<&TaskStub> {
+    pub(crate) fn get_task_stub(&self, task_id: TaskStubId) -> Option<&TaskStub> {
         self.task_stubs.get(task_id)
     }
 

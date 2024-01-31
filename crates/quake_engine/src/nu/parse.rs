@@ -8,9 +8,8 @@ use nu_protocol::{BlockId, Category, DeclId, Spanned};
 use quake_core::prelude::*;
 
 use crate::metadata::{Metadata, TaskFlags, TaskStub};
-use crate::{QUAKE_CATEGORY, QUAKE_SCOPE_VARIABLE_ID};
 
-use super::commands;
+use super::{commands, QUAKE_CATEGORY, QUAKE_SCOPE_VARIABLE_ID};
 
 macro_rules! match_expr {
     ($expr:pat, $arg:expr) => {

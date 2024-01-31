@@ -5,16 +5,30 @@ use nu_cli::gather_parent_env_vars;
 use nu_cmd_lang::create_default_context;
 use nu_command::add_shell_command_context;
 use nu_protocol::engine::{EngineState, Stack, StateWorkingSet, PWD_ENV};
-use nu_protocol::{Span, Type, Value};
+use nu_protocol::{Span, Type, Value, VarId};
 use parking_lot::Mutex;
 
 use crate::state::State;
-use crate::{QUAKE_SCOPE_VARIABLE_ID, QUAKE_VARIABLE_ID};
 
 pub mod commands;
 pub mod eval;
 pub mod parse;
 pub mod types;
+
+/// The ID of the `$quake` variable, which holds the internal state of the program.
+///
+/// The value of this constant is the next available variable ID after the first five that are
+/// reserved by nushell. If for some reason this should change in the future, this discrepancy
+/// should be noticed by an assertion following the registration of the variable into the working
+/// set.
+pub const QUAKE_VARIABLE_ID: VarId = 5;
+
+/// The ID of the `$quake_scope` variable, which is set inside evaluated blocks in order to retrieve
+/// scoped state from the global state.
+pub const QUAKE_SCOPE_VARIABLE_ID: VarId = 6;
+
+/// The custom nushell [`Category`](::nu_protocol::Category) assigned to quake items.
+pub const QUAKE_CATEGORY: &str = "quake";
 
 pub fn create_engine_state(state: Arc<Mutex<State>>) -> crate::Result<EngineState> {
     let mut engine_state = add_shell_command_context(create_default_context());

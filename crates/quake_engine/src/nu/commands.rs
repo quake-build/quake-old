@@ -5,7 +5,7 @@ use nu_protocol::{
     Category, PipelineData, ShellError, Signature, Spanned, SyntaxShape, Type, Value,
 };
 
-use crate::QUAKE_CATEGORY;
+use super::QUAKE_CATEGORY;
 
 #[derive(Clone)]
 pub struct DefTask;
