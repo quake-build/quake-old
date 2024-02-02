@@ -1,9 +1,7 @@
-use nu_parser::{parse_full_cell_path, parse_signature};
-use nu_protocol::ast::{
-    Block, Expr, Expression, ExternalArgument, Pipeline, PipelineElement, RecordItem,
-};
+use nu_parser::parse_value;
+use nu_protocol::ast::{Block, Expr, Expression, Pipeline, PipelineElement};
 use nu_protocol::engine::{Command, StateWorkingSet};
-use nu_protocol::{BlockId, Category, DeclId, Spanned};
+use nu_protocol::{Category, DeclId, Spanned, SyntaxShape};
 
 use quake_core::prelude::*;
 
@@ -44,7 +42,7 @@ macro_rules! match_expr {
 ///
 /// ## Details
 ///
-/// `def-task` commands are [defined with a syntax](super::commands::DefTask::signature) that, in
+/// `def-task` commands are [defined with a signature](super::commands::DefTask::signature) that, in
 /// order, takes:
 /// - The name of the task (a string)
 /// - Various flags (not positional args, so may appear anywhere)
@@ -72,11 +70,11 @@ fn parse_def_task(
     working_set: &mut StateWorkingSet<'_>,
     metadata: &mut Metadata,
 ) {
-    // extract an owned Call from the expression, replacing the original with a stub
-    match_expr!(Expr::Call(call), call_expr);
-
     let span = call_expr.span;
 
+    match_expr!(Expr::Call(call), call_expr);
+
+    // extract flag values
     let flags = TaskFlags {
         concurrent: call.has_flag("concurrent"),
     };
@@ -86,25 +84,41 @@ fn parse_def_task(
 
     match_expr!(Expr::String(name), name_span, arguments.next().unwrap());
 
-    // re-parse naive list span into signature
+    // extract the "signature" (actually a list<any>) to get its span
     let sig_arg = arguments.next().unwrap();
+
+    // replace the bogus list with an empty one
     sig_arg.expr = Expr::List(Vec::new());
+
+    // re-parse signature span into actual signature
+    working_set.enter_scope();
     match_expr!(
         Expr::Signature(mut signature),
-        parse_signature(working_set, sig_arg.span)
+        parse_value(working_set, sig_arg.span, &SyntaxShape::Signature)
     );
 
     // update signature details with additional information
     signature.name = name.to_owned();
     signature.category = Category::Custom(QUAKE_CATEGORY.to_owned());
 
-    // extract block(s), and apply the above signature to them
-    let mut blocks = Vec::with_capacity(2);
-    for block_arg in arguments.by_ref().take(2) {
-        // try and fetch another block
-        match_expr!(Expr::Block(block_id), block_arg, else { break; });
+    // reparse bodies(s) with their signature now applied
+    let mut bodies = Vec::with_capacity(2);
+    for arg in arguments.by_ref().take(2) {
+        // erase the block as we will be replacing it
+        match_expr!(Expr::Closure(block_id), arg, else { break; });
+        *working_set.get_block_mut(*block_id) = Block::new();
 
-        blocks.push(*block_id);
+        // remove any errors inside before we reparse
+        working_set
+            .parse_errors
+            .retain(|err| !arg.span.contains_span(err.span()));
+
+        // reparse and replace the closure
+        *arg = parse_value(working_set, arg.span, &SyntaxShape::Closure(None));
+
+        // extract the expression and add the new block id
+        match_expr!(Expr::Closure(block_id), arg, else { panic!("bad closure reparse"); });
+        bodies.push(*block_id);
 
         let block = working_set.get_block_mut(*block_id);
 
@@ -113,16 +127,9 @@ fn parse_def_task(
 
         // update the signature
         block.signature = signature.clone();
-
-        // purge all errors inside the span to get rid of any bogus errors
-        working_set
-            .parse_errors
-            .retain(|err| !span.contains_span(err.span()));
-
-        // TODO optimization: only run when there were variable not found errors
-        // reparse garbage cell paths
-        reparse_garbage_paths_in_block(*block_id, working_set);
     }
+
+    working_set.exit_scope();
 
     debug_assert!(
         arguments.next().is_none(),
@@ -130,7 +137,7 @@ fn parse_def_task(
     );
 
     // determine block IDs for metadata
-    let (run_body, decl_body) = match blocks[..] {
+    let (run_body, decl_body) = match bodies[..] {
         [a] => (Some(a), None),
         [a, b] => (Some(b), Some(a)),
         _ => unreachable!("bad def-task syntax"),
@@ -152,108 +159,6 @@ fn parse_def_task(
         },
     ) {
         working_set.error(err.into_parse_error());
-    }
-}
-
-fn reparse_garbage_paths_in_block(block_id: BlockId, working_set: &mut StateWorkingSet<'_>) {
-    let mut pipelines = working_set.get_block_mut(block_id).pipelines.clone(); // *sad clone noise*
-    for pipeline in &mut pipelines {
-        for element in &mut pipeline.elements {
-            reparse_garbage_paths_in_expr(element.expression_mut(), working_set);
-        }
-    }
-    working_set.get_block_mut(block_id).pipelines = pipelines;
-}
-
-fn reparse_garbage_paths_in_expr(expr: &mut Expression, working_set: &mut StateWorkingSet<'_>) {
-    match &mut expr.expr {
-        // garbage path (likely due to unbound variable)
-        Expr::FullCellPath(path) if path.head.expr == Expr::Garbage => {
-            *expr = parse_full_cell_path(working_set, None, expr.span);
-        }
-
-        // expressions with subexpressions
-        Expr::UnaryNot(x)
-        | Expr::Keyword(_, _, x)
-        | Expr::ValueWithUnit(x, _)
-        | Expr::Spread(x) => {
-            reparse_garbage_paths_in_expr(x, working_set);
-        }
-        Expr::BinaryOp(x, _, y) => {
-            reparse_garbage_paths_in_expr(x, working_set);
-            reparse_garbage_paths_in_expr(y, working_set);
-        }
-        Expr::Range(x, y, z, _) => {
-            for expr in [x, y, z] {
-                let Some(expr) = expr else {
-                    continue;
-                };
-                reparse_garbage_paths_in_expr(expr, working_set);
-            }
-        }
-        Expr::Call(call) => call
-            .arguments
-            .iter_mut()
-            .filter_map(|a| a.expression_mut())
-            .for_each(|e| reparse_garbage_paths_in_expr(e, working_set)),
-        Expr::ExternalCall(x, es, _) => {
-            reparse_garbage_paths_in_expr(x, working_set);
-            for e in es {
-                let (ExternalArgument::Regular(expr) | ExternalArgument::Spread(expr)) = e;
-                reparse_garbage_paths_in_expr(expr, working_set);
-            }
-        }
-        Expr::Subexpression(block_id) | Expr::Block(block_id) | Expr::Closure(block_id) => {
-            reparse_garbage_paths_in_block(*block_id, working_set);
-        }
-        Expr::List(xs) | Expr::StringInterpolation(xs) => {
-            xs.iter_mut()
-                .for_each(|e| reparse_garbage_paths_in_expr(e, working_set));
-        }
-        Expr::Table(xs, yss) => {
-            xs.iter_mut()
-                .chain(yss.iter_mut().flatten())
-                .for_each(|e| reparse_garbage_paths_in_expr(e, working_set));
-        }
-        Expr::MatchBlock(ms) => {
-            ms.iter_mut()
-                .for_each(|(_, e)| reparse_garbage_paths_in_expr(e, working_set));
-        }
-        Expr::Record(rs) => {
-            rs.iter_mut().for_each(|r| match r {
-                RecordItem::Pair(x, y) => {
-                    reparse_garbage_paths_in_expr(x, working_set);
-                    reparse_garbage_paths_in_expr(y, working_set);
-                }
-                RecordItem::Spread(_, x) => {
-                    reparse_garbage_paths_in_expr(x, working_set);
-                }
-            });
-        }
-        Expr::FullCellPath(path) => {
-            reparse_garbage_paths_in_expr(&mut path.head, working_set);
-        }
-
-        // the rest (left here to ensure all are checked in case of an update)
-        Expr::Bool(_)
-        | Expr::Int(_)
-        | Expr::Float(_)
-        | Expr::Binary(_)
-        | Expr::Var(_)
-        | Expr::VarDecl(_)
-        | Expr::Operator(_)
-        | Expr::RowCondition(_)
-        | Expr::DateTime(_)
-        | Expr::Filepath(_)
-        | Expr::Directory(_)
-        | Expr::GlobPattern(_)
-        | Expr::String(_)
-        | Expr::CellPath(_)
-        | Expr::ImportPattern(_)
-        | Expr::Overlay(_)
-        | Expr::Signature(_)
-        | Expr::Nothing
-        | Expr::Garbage => {}
     }
 }
 

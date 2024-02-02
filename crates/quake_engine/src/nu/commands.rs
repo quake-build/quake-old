@@ -29,24 +29,16 @@ impl Command for DefTask {
                 Some('c'),
             )
             // HACK this should be a SyntaxShape::Signature, but declaring it as such here causes
-            // the second, optional body to get passed over, so we use a close enough syntactical
-            // approximation (a list of strings) and re-parse the span manually as a signature after
-            // the initial parsing pass
+            // the second, optional block to get passed over, so we use a close enough syntactical
+            // approximation (a list<any>) and re-parse the span manually as a signature after the
+            // initial parsing pass
             .required(
                 "params",
-                SyntaxShape::List(Box::new(SyntaxShape::String)),
+                SyntaxShape::List(Box::new(SyntaxShape::Any)),
                 "parameters",
             )
-            .required(
-                "first_body",
-                SyntaxShape::Block,
-                "run body, or decl body if two blocks are provided",
-            )
-            .optional(
-                "second_body",
-                SyntaxShape::Block,
-                "run body if two blocks are provided",
-            )
+            .optional("decl_body", SyntaxShape::Closure(None), "declaration body")
+            .required("run_body", SyntaxShape::Closure(None), "run body")
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
 
@@ -58,7 +50,6 @@ impl Command for DefTask {
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
         // (parser internal)
-        // TODO error here? should be erased
         Ok(PipelineData::Empty)
     }
 }

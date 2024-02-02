@@ -303,7 +303,7 @@ impl Engine {
             let metadata = call
                 .metadata
                 .as_ref()
-                .expect("no metadata defined for task, was decl body run?");
+                .expect("no metadata defined for task call");
             if !is_dirty(metadata)? {
                 print_info("skipping task", &name);
 
