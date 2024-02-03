@@ -3,9 +3,8 @@ use nu_protocol::ast::{Block, Expr, Expression, Pipeline, PipelineElement};
 use nu_protocol::engine::{Command, StateWorkingSet};
 use nu_protocol::{Category, DeclId, Spanned, SyntaxShape};
 
-use quake_core::prelude::*;
-
-use crate::metadata::{Metadata, TaskFlags, TaskStub};
+use quake_core::errors::IntoParseError;
+use quake_core::metadata::{Metadata, TaskFlags, TaskStub};
 
 use super::{commands, QUAKE_CATEGORY, QUAKE_SCOPE_VARIABLE_ID};
 

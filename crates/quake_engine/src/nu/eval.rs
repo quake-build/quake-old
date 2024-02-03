@@ -5,8 +5,8 @@ use nu_protocol::engine::{EngineState, Stack};
 use nu_protocol::{print_if_stream, PipelineData, ShellError, Span, Value};
 
 use quake_core::errors::IntoShellError;
+use quake_core::metadata::{TaskCallId, TaskCallMetadata};
 
-use crate::metadata::{TaskCallId, TaskCallMetadata};
 use crate::state::{Scope, State};
 use crate::utils::set_last_exit_code;
 

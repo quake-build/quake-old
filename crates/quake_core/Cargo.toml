@@ -8,5 +8,13 @@ edition.workspace = true
 [dependencies]
 quake_errors = { path = "../quake_errors" }
 
+nu-ansi-term.workspace = true
+nu-protocol.workspace = true
+serde = { workspace = true, features = ["rc"], optional = true }
+
 [lints]
 workspace = true
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]

@@ -1,10 +1,8 @@
-#![feature(exact_size_is_empty)]
-
 use std::path::PathBuf;
 
 use quake_core::prelude::*;
-use quake_engine::utils::get_init_cwd;
-use quake_engine::*;
+use quake_core::utils::get_init_cwd;
+use quake_engine::{Engine, EngineOptions};
 
 /// Parse a config property consisting of a single key-value pair in the form `PROPERTY=VALUE`.
 fn parse_config_property(s: &str) -> Result<(String, String)> {
@@ -150,7 +148,7 @@ fn main() -> Result<()> {
 
     let options = {
         let quiet = matches.get_flag("quiet");
-        Options { quiet }
+        EngineOptions { quiet }
     };
 
     let mut engine = Engine::new(project, options)?;

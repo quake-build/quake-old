@@ -7,12 +7,8 @@ edition.workspace = true
 
 [dependencies]
 miette = "5.10.0"
-nu-protocol = { git = "https://github.com/quake-build/nushell" }
-serde = { version = "1.0.193", features = ["derive"], optional = true }
-thiserror = "1.0.50"
-
-[features]
-serde = ["dep:serde"]
+nu-protocol.workspace = true
+thiserror = "1.0.56"
 
 [lints]
 workspace = true

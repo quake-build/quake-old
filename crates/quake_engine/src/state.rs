@@ -7,13 +7,11 @@ use nu_protocol::{Span, Value};
 use parking_lot::Mutex;
 use serde::Serialize;
 
+use quake_core::metadata::{Metadata, TaskCallMetadata};
 use quake_core::prelude::*;
 
-use crate::metadata::{Metadata, TaskCallMetadata};
 use crate::nu::{QUAKE_SCOPE_VARIABLE_ID, QUAKE_VARIABLE_ID};
 use crate::Result;
-
-pub mod metadata;
 
 pub type ScopeId = usize;
 
@@ -22,9 +20,9 @@ pub type ScopeId = usize;
 /// Its primary purpose is to keep track of [`Task`]s and their associated signatures and blocks,
 /// which are evaluated lazily by the engine.
 ///
-/// This is stored as an `Arc<Mutex<State>>` inside the quake engine with the
-/// [`VarId`](::nu_protocol::VarId) of [`QUAKE_VARIABLE_ID`](crate::QUAKE_VARIABLE_ID) so that it
-/// can be fetched by commands while they are evaluating.
+/// This is stored inside the nushell engine with the [`VarId`](::nu_protocol::VarId) of
+/// [`QUAKE_VARIABLE_ID`](crate::QUAKE_VARIABLE_ID) so that it can be fetched by commands while they
+/// are evaluating.
 #[derive(Debug, Default)]
 pub struct State {
     pub metadata: Metadata,
@@ -93,17 +91,6 @@ impl Serialize for State {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct Scope {
-    pub task: Arc<TaskCallMetadata>,
-}
-
-impl Scope {
-    pub fn new(task: Arc<TaskCallMetadata>) -> Self {
-        Self { task }
-    }
-}
-
 #[inline(always)]
 fn get_state(engine_state: &EngineState) -> Arc<Mutex<State>> {
     if let Some(Value::CustomValue { val, .. }) = &engine_state.get_var(QUAKE_VARIABLE_ID).const_val
@@ -129,4 +116,15 @@ fn get_scope_id(stack: &Stack, span: Span) -> Result<ScopeId> {
     }
 
     Err(errors::UnknownScope { span }.into())
+}
+
+#[derive(Debug, Clone)]
+pub struct Scope {
+    pub task: Arc<TaskCallMetadata>,
+}
+
+impl Scope {
+    pub fn new(task: Arc<TaskCallMetadata>) -> Self {
+        Self { task }
+    }
 }

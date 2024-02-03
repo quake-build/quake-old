@@ -17,9 +17,10 @@ use tokio::runtime::Runtime;
 use tokio::task::{AbortHandle, JoinSet};
 
 use quake_core::exit_codes;
+use quake_core::metadata::{Metadata, TaskCallId};
 use quake_core::prelude::*;
+use quake_core::utils::is_dirty;
 
-use crate::metadata::{Metadata, TaskCallId};
 use crate::nu::eval::{eval_block, eval_task_decl_body, eval_task_run_body};
 use crate::nu::parse::parse_def_tasks;
 use crate::nu::{create_engine_state, create_stack};
@@ -27,22 +28,19 @@ use crate::run_tree::{generate_run_tree, RunNode};
 use crate::state::State;
 use crate::utils::*;
 
-mod state;
-pub use state::metadata;
-
-pub mod utils;
-
 mod nu;
 mod run_tree;
+mod state;
+mod utils;
 
 #[derive(Debug, Clone)]
-pub struct Options {
+pub struct EngineOptions {
     pub quiet: bool,
 }
 
 pub struct Engine {
     project: Project,
-    _options: Options,
+    _options: EngineOptions,
     state: Arc<Mutex<State>>,
     engine_state: EngineState,
     stack: Stack,
@@ -51,14 +49,14 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(project: Project, options: Options) -> Result<Self> {
+    pub fn new(project: Project, options: EngineOptions) -> Result<Self> {
         #[cfg(windows)]
         nu_ansi_term::enable_ansi_support();
 
         let internal_state = Arc::new(Mutex::new(State::new()));
 
         let engine_state = create_engine_state(internal_state.clone())?;
-        let stack = create_stack(project.project_root());
+        let stack = create_stack(&project.project_root);
 
         let mut engine = Self {
             project,
@@ -79,9 +77,9 @@ impl Engine {
 
     /// Load and evaluate the project's build script.
     fn load(&mut self) -> Result<bool> {
-        let build_script = self.project.build_script();
+        let build_script = &self.project.build_script;
         let filename = build_script
-            .strip_prefix(self.project.project_root())
+            .strip_prefix(&self.project.project_root)
             .unwrap_or(build_script)
             .to_string_lossy()
             .into_owned();
@@ -312,7 +310,6 @@ impl Engine {
 
             print_info("running task", &name);
 
-            // TODO replace this span with the calling origin
             let result = eval_task_run_body(call_id, call.span, &engine_state, &mut stack);
 
             let success = match result {

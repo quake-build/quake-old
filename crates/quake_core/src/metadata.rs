@@ -4,22 +4,25 @@ use std::sync::Arc;
 
 use nu_protocol::ast::Argument;
 use nu_protocol::{BlockId, Signature, Span, Spanned};
-use serde::Serialize;
 
-use quake_core::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-pub(crate) type TaskStubId = usize;
+use crate::prelude::*;
 
-pub(crate) type TaskCallId = usize;
+pub type TaskStubId = usize;
 
-#[derive(Clone, Debug, Default, Serialize)]
+pub type TaskCallId = usize;
+
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Metadata {
     task_calls: Vec<TaskCall>,
     task_stubs: Vec<TaskStub>,
 }
 
 impl Metadata {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Default::default()
     }
 
@@ -27,12 +30,11 @@ impl Metadata {
         self.task_stubs.iter()
     }
 
-    pub(crate) fn get_task_call(&self, call_id: TaskCallId) -> Option<&TaskCall> {
+    pub fn get_task_call(&self, call_id: TaskCallId) -> Option<&TaskCall> {
         self.task_calls.get(call_id)
     }
 
-    /// Find a task call by name.
-    pub(crate) fn find_task_call(
+    pub fn find_task_call(
         &self,
         name: &str,
         arguments: &[Argument],
@@ -51,7 +53,7 @@ impl Metadata {
             })
     }
 
-    pub(crate) fn find_task_call_mut(
+    pub fn find_task_call_mut(
         &mut self,
         name: &str,
         arguments: &[Argument],
@@ -81,7 +83,7 @@ impl Metadata {
     /// ## Panics
     ///
     /// Panics when passed an invalid task ID.
-    pub(crate) fn register_task_call(
+    pub fn register_task_call(
         &mut self,
         task_id: TaskStubId,
         arguments: Vec<Argument>,
@@ -105,7 +107,7 @@ impl Metadata {
     /// ## Panics
     ///
     /// Panics if `call_id` is invalid.
-    pub(crate) fn insert_task_call_metadata(
+    pub fn insert_task_call_metadata(
         &mut self,
         call_id: TaskCallId,
         metadata: Arc<TaskCallMetadata>,
@@ -119,7 +121,7 @@ impl Metadata {
     /// ## Panics
     ///
     /// Panics if `call_id` is invalid.
-    pub(crate) fn clear_all_task_call_metadata(&mut self, call_id: TaskCallId) {
+    pub fn clear_all_task_call_metadata(&mut self, call_id: TaskCallId) {
         assert!(call_id < self.task_calls.len(), "invalid call_id");
 
         let Some(dependencies) = self.task_calls[call_id]
@@ -136,11 +138,11 @@ impl Metadata {
         self.task_calls[call_id].metadata = None;
     }
 
-    pub(crate) fn get_task_stub(&self, task_id: TaskStubId) -> Option<&TaskStub> {
+    pub fn get_task_stub(&self, task_id: TaskStubId) -> Option<&TaskStub> {
         self.task_stubs.get(task_id)
     }
 
-    pub(crate) fn find_task_stub(&self, task_name: &str) -> Result<&TaskStub> {
+    pub fn find_task_stub(&self, task_name: &str) -> Result<&TaskStub> {
         self.task_stubs
             .iter()
             .find(|t| t.name.item == task_name)
@@ -152,7 +154,7 @@ impl Metadata {
             })
     }
 
-    pub(crate) fn find_task_stub_id(&self, task_name: &str) -> Result<TaskStubId> {
+    pub fn find_task_stub_id(&self, task_name: &str) -> Result<TaskStubId> {
         self.task_stubs
             .iter()
             .position(|t| t.name.item == task_name)
@@ -164,7 +166,7 @@ impl Metadata {
             })
     }
 
-    pub(crate) fn add_task_stub(&mut self, name: String, stub: TaskStub) -> Result<TaskStubId> {
+    pub fn add_task_stub(&mut self, name: String, stub: TaskStub) -> Result<TaskStubId> {
         if let Ok(existing) = self.find_task_stub(&name) {
             return Err(errors::TaskDuplicateDefinition {
                 name,
@@ -179,7 +181,7 @@ impl Metadata {
         Ok(task_id)
     }
 
-    pub(crate) fn add_task_stubs(&mut self, stubs: HashMap<String, TaskStub>) -> Result<()> {
+    pub fn add_task_stubs(&mut self, stubs: HashMap<String, TaskStub>) -> Result<()> {
         for (name, stub) in stubs {
             self.add_task_stub(name, stub)?;
         }
@@ -188,7 +190,8 @@ impl Metadata {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct TaskCall {
     pub task_id: TaskStubId,
     pub arguments: Vec<Argument>,
@@ -196,26 +199,29 @@ pub struct TaskCall {
     pub metadata: Option<Arc<TaskCallMetadata>>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct TaskCallMetadata {
     pub dependencies: Vec<TaskCallId>,
     pub sources: Vec<PathBuf>,
     pub artifacts: Vec<PathBuf>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct TaskFlags {
     pub concurrent: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct TaskStub {
     pub name: Spanned<String>,
     pub flags: TaskFlags,
     pub signature: Box<Signature>,
     pub span: Span,
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub decl_body: Option<BlockId>,
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub run_body: Option<BlockId>,
 }

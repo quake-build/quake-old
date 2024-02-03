@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::metadata::{Metadata, TaskCallId};
+use quake_core::metadata::{Metadata, TaskCallId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunNode {
@@ -42,9 +42,9 @@ impl RunNode {
     }
 }
 
-pub fn generate_run_tree(task: TaskCallId, metadata: &Metadata) -> RunNode {
+pub fn generate_run_tree(call_id: TaskCallId, metadata: &Metadata) -> RunNode {
     let mut included = HashSet::new();
-    generate_run_tree_inner(task, metadata, &mut included)
+    generate_run_tree_inner(call_id, metadata, &mut included)
 }
 
 fn generate_run_tree_inner(

@@ -1,19 +1,21 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 use crate::BUILD_SCRIPT_NAMES;
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Project {
-    project_root: PathBuf,
-    build_script: PathBuf,
+    pub project_root: PathBuf,
+    pub build_script: PathBuf,
 }
 
 impl Project {
     pub fn new(project_root: PathBuf) -> Result<Self> {
-        if !project_root.is_dir() {
-            return Err(errors::ProjectNotFound.into());
-        }
+        assert!(project_root.is_dir(), "project root not a directory");
 
         let build_script = BUILD_SCRIPT_NAMES
             .iter()
@@ -25,13 +27,5 @@ impl Project {
             project_root,
             build_script,
         })
-    }
-
-    pub fn project_root(&self) -> &Path {
-        &self.project_root
-    }
-
-    pub fn build_script(&self) -> &Path {
-        &self.build_script
     }
 }
