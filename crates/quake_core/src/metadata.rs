@@ -74,11 +74,12 @@ impl Metadata {
 
     /// Insert a task call.
     ///
-    /// This will always result in a new task call ID, even if an otherwise identical one already
-    /// exists, so that individual invocations are tracked.
+    /// This will always result in a new task call ID, even if an otherwise
+    /// identical one already exists, so that individual invocations are
+    /// tracked.
     ///
-    /// For updating the metadata inside of a task call, see [`insert_task_call_metadata`]
-    /// and [`clear_all_task_call_metadata`].
+    /// For updating the metadata inside of a task call, see
+    /// [`insert_task_call_metadata`] and [`clear_all_task_call_metadata`].
     ///
     /// ## Panics
     ///
@@ -116,7 +117,8 @@ impl Metadata {
         self.task_calls[call_id].metadata = Some(metadata);
     }
 
-    /// Recursively clear the metadata for a given call and for all of its dependencies.
+    /// Recursively clear the metadata for a given call and for all of its
+    /// dependencies.
     ///
     /// ## Panics
     ///

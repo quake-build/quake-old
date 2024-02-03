@@ -95,7 +95,8 @@ impl Engine {
         Ok(true)
     }
 
-    /// Evaluate the source of a build file, returning whether or not an error occurred.
+    /// Evaluate the source of a build file, returning whether or not an error
+    /// occurred.
     fn eval_source(&mut self, source: &[u8], filename: &str) -> Result<bool> {
         let (block, delta) = {
             let mut working_set = StateWorkingSet::new(&self.engine_state);
@@ -103,7 +104,8 @@ impl Engine {
             // perform a first-pass parse over the file
             let mut output = parse(&mut working_set, Some(filename), source, false);
 
-            // re-parse `def-task` calls, populating the metadata with the corresponding task stubs
+            // re-parse `def-task` calls, populating the metadata with the corresponding
+            // task stubs
             let mut state = self.state.lock();
             parse_def_tasks(&mut output, &mut working_set, &mut state.metadata);
 
@@ -138,8 +140,9 @@ impl Engine {
 
     /// Get the metadata stored in the internal state.
     ///
-    /// Note that this locks the internal state (which is used elsewhere frequently, including in
-    /// command implementations), so shouldn't be held onto for longer than is necessary.
+    /// Note that this locks the internal state (which is used elsewhere
+    /// frequently, including in command implementations), so shouldn't be
+    /// held onto for longer than is necessary.
     pub fn metadata(&self) -> impl std::ops::Deref<Target = Metadata> + '_ {
         MutexGuard::map(self.state.lock(), |s| &mut s.metadata)
     }

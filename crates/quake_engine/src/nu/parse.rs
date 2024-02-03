@@ -35,18 +35,21 @@ macro_rules! match_expr {
     };
 }
 
-/// Parse a given block for `def-task` invocations to transform them (and their block arguments)
-/// into their expected internal representation, and return the metadata extracted from this
-/// operation in the form of a collection of [`TaskStub`]s.
+/// Parse a given block for `def-task` invocations to transform them (and their
+/// block arguments) into their expected internal representation, and return the
+/// metadata extracted from this operation in the form of a collection of
+/// [`TaskStub`]s.
 ///
 /// ## Details
 ///
-/// `def-task` commands are [defined with a signature](super::commands::DefTask::signature) that, in
-/// order, takes:
+/// `def-task` commands are [defined with a
+/// signature](super::commands::DefTask::signature) that, in order, takes:
 /// - The name of the task (a string)
 /// - Various flags (not positional args, so may appear anywhere)
-/// - The task's signature (initially parsed as a list of strings due to a nushell parsing quirk)
-/// - One or two blocks (either a run body, or a declaration body followed by a run body)
+/// - The task's signature (initially parsed as a list of strings due to a
+///   nushell parsing quirk)
+/// - One or two blocks (either a run body, or a declaration body followed by a
+///   run body)
 ///
 /// For each of these that we encounter, we apply the following transformations:
 /// - Parse any flags into [`TaskFlags`]

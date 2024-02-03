@@ -143,7 +143,8 @@ pub fn eval_task_run_body(
     Ok(result)
 }
 
-/// Similar to [`eval_call`](nu_engine::eval_call), but with manual blocks and arguments.
+/// Similar to [`eval_call`](nu_engine::eval_call), but with manual blocks and
+/// arguments.
 fn eval_block_with_args(
     block: &Block,
     arguments: &[Argument],

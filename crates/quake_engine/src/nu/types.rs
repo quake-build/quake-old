@@ -1,4 +1,5 @@
-//! Custom types serialized in nushell inside [`Value::Custom`](nu_protocol::Value::Custom)s.
+//! Custom types serialized in nushell inside
+//! [`Value::Custom`](nu_protocol::Value::Custom)s.
 
 use std::sync::Arc;
 

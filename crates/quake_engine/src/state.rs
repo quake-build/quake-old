@@ -17,12 +17,13 @@ pub type ScopeId = usize;
 
 /// Internal state for use by the [`Engine`](super::Engine) and commands.
 ///
-/// Its primary purpose is to keep track of [`Task`]s and their associated signatures and blocks,
-/// which are evaluated lazily by the engine.
+/// Its primary purpose is to keep track of [`Task`]s and their associated
+/// signatures and blocks, which are evaluated lazily by the engine.
 ///
-/// This is stored inside the nushell engine with the [`VarId`](::nu_protocol::VarId) of
-/// [`QUAKE_VARIABLE_ID`](crate::QUAKE_VARIABLE_ID) so that it can be fetched by commands while they
-/// are evaluating.
+/// This is stored inside the nushell engine with the
+/// [`VarId`](::nu_protocol::VarId) of
+/// [`QUAKE_VARIABLE_ID`](crate::QUAKE_VARIABLE_ID) so that it can be fetched by
+/// commands while they are evaluating.
 #[derive(Debug, Default)]
 pub struct State {
     pub metadata: Metadata,

@@ -15,19 +15,21 @@ pub mod eval;
 pub mod parse;
 pub mod types;
 
-/// The ID of the `$quake` variable, which holds the internal state of the program.
+/// The ID of the `$quake` variable, which holds the internal state of the
+/// program.
 ///
-/// The value of this constant is the next available variable ID after the first five that are
-/// reserved by nushell. If for some reason this should change in the future, this discrepancy
-/// should be noticed by an assertion following the registration of the variable into the working
-/// set.
+/// The value of this constant is the next available variable ID after the first
+/// five that are reserved by nushell. If for some reason this should change in
+/// the future, this discrepancy should be noticed by an assertion following the
+/// registration of the variable into the working set.
 pub const QUAKE_VARIABLE_ID: VarId = 5;
 
-/// The ID of the `$quake_scope` variable, which is set inside evaluated blocks in order to retrieve
-/// scoped state from the global state.
+/// The ID of the `$quake_scope` variable, which is set inside evaluated blocks
+/// in order to retrieve scoped state from the global state.
 pub const QUAKE_SCOPE_VARIABLE_ID: VarId = 6;
 
-/// The custom nushell [`Category`](::nu_protocol::Category) assigned to quake items.
+/// The custom nushell [`Category`](::nu_protocol::Category) assigned to quake
+/// items.
 pub const QUAKE_CATEGORY: &str = "quake";
 
 pub fn create_engine_state(state: Arc<Mutex<State>>) -> crate::Result<EngineState> {

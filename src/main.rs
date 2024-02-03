@@ -4,7 +4,8 @@ use quake_core::prelude::*;
 use quake_core::utils::get_init_cwd;
 use quake_engine::{Engine, EngineOptions};
 
-/// Parse a config property consisting of a single key-value pair in the form `PROPERTY=VALUE`.
+/// Parse a config property consisting of a single key-value pair in the form
+/// `PROPERTY=VALUE`.
 fn parse_config_property(s: &str) -> Result<(String, String)> {
     let pos = s
         .find('=')
