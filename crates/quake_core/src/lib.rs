@@ -1,3 +1,5 @@
+pub use ::quake_errors as errors;
+
 pub mod prelude;
 pub mod project;
 

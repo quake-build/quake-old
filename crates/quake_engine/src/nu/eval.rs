@@ -4,7 +4,7 @@ use nu_protocol::ast::{Argument, Block};
 use nu_protocol::engine::{EngineState, Stack};
 use nu_protocol::{print_if_stream, PipelineData, ShellError, Span, Value};
 
-use quake_core::prelude::IntoShellError;
+use quake_core::errors::IntoShellError;
 
 use crate::metadata::{TaskCallId, TaskCallMetadata};
 use crate::state::{Scope, State};
