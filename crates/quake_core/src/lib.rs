@@ -3,13 +3,7 @@ pub mod project;
 
 /// Build script names quake will automatically detect (case-sensitive), in
 /// descending precedence.
-pub const BUILD_SCRIPT_NAMES: &[&str] = &[
-    "build.quake",
-    "build.quake.nu",
-    "Quakefile",
-    "quakefile",
-    "QUAKE",
-];
+pub const BUILD_SCRIPT_NAMES: &[&str] = &["build.quake", "build.quake.nu"];
 
 pub mod exit_codes {
     pub const LOAD_FAIL: i32 = 100;
