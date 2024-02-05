@@ -14,11 +14,10 @@ pub fn get_init_cwd() -> Option<PathBuf> {
         .or_else(|| std::env::var(PWD_ENV).ok().map(Into::into))
 }
 
-pub fn latest_timestamp(paths: &[PathBuf]) -> Result<Option<SystemTime>> {
+pub fn latest_timestamp(paths: &[impl AsRef<Path>]) -> Result<Option<SystemTime>> {
     Ok(paths
         .iter()
-        .map(Path::new)
-        .filter(|p| p.exists())
+        .filter(|p| p.as_ref().exists())
         .map(|s| fs::metadata(s).and_then(|m| m.modified()).into_diagnostic())
         .collect::<Result<Vec<_>>>()?
         .into_iter()
