@@ -9,9 +9,12 @@ use quake_engine::{Engine, EngineOptions};
 /// Parse a config property consisting of a single key-value pair in the form
 /// `PROPERTY=VALUE`.
 fn parse_config_property(s: &str) -> Result<(String, String)> {
-    let pos = s
-        .find('=')
-        .ok_or_else(|| miette!("Invalid config property `{s}`"))?;
+    let pos = s.find('=').ok_or_else(|| {
+        error!(
+            code = "quake::cli::invalid_config_property",
+            "Invalid config property `{s}`"
+        )
+    })?;
     Ok((s[..pos].to_owned(), s[pos + 1..].to_owned()))
 }
 
@@ -145,10 +148,12 @@ fn main() -> Result<()> {
         if let Some(project_root) = matches.get_one::<PathBuf>("project") {
             Project::new(project_root.clone())?
         } else {
-            Project::locate(
-                get_init_cwd()
-                    .ok_or_else(|| miette!("Failed to determine current working directory"))?,
-            )?
+            Project::locate(get_init_cwd().ok_or_else(|| {
+                error!(
+                    code = "quake::cli::unknown_working_directory",
+                    "Failed to determine current working directory"
+                )
+            })?)?
         }
     };
 

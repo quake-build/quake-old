@@ -2,6 +2,8 @@ use miette::Diagnostic;
 use nu_protocol::Span;
 use thiserror::Error;
 
+pub const QUAKE_OTHER_ERROR_CODE: &str = "quake::other";
+
 #[derive(Debug, Clone, Error, Diagnostic)]
 #[error("Project not found in directory")]
 #[diagnostic(code(quake::project::not_found))]

@@ -1,8 +1,11 @@
-pub use ::miette::{miette, Context, IntoDiagnostic};
+pub use miette::{self, Context, IntoDiagnostic};
+
+pub mod errors;
 
 mod nu;
 pub use nu::*;
 
-pub mod errors;
+mod macros;
+pub use macros::private;
 
 pub type Result<T> = miette::Result<T>;
