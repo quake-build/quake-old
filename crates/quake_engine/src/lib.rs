@@ -56,7 +56,7 @@ impl Engine {
         let internal_state = Arc::new(Mutex::new(State::new()));
 
         let engine_state = create_engine_state(internal_state.clone())?;
-        let stack = create_stack(&project.project_root);
+        let stack = create_stack(project.project_root());
 
         let mut engine = Self {
             project,
@@ -77,9 +77,9 @@ impl Engine {
 
     /// Load and evaluate the project's build script.
     fn load(&mut self) -> Result<bool> {
-        let build_script = &self.project.build_script;
+        let build_script = self.project.build_script();
         let filename = build_script
-            .strip_prefix(&self.project.project_root)
+            .strip_prefix(self.project.project_root())
             .unwrap_or(build_script)
             .to_string_lossy()
             .into_owned();

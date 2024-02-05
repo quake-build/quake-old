@@ -3,7 +3,7 @@ use nu_protocol::Span;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Error, Diagnostic)]
-#[error("Failed to locate project")]
+#[error("Project not found in directory")]
 #[diagnostic(code(quake::project::not_found))]
 pub struct ProjectNotFound;
 

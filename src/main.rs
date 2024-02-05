@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use clap::builder::PathBufValueParser;
+
 use quake_core::prelude::*;
 use quake_core::utils::get_init_cwd;
 use quake_engine::{Engine, EngineOptions};
@@ -68,6 +70,7 @@ fn main() -> Result<()> {
                 .short('p')
                 .long("project")
                 .value_name("PROJECT_DIR")
+                .value_parser(PathBufValueParser::new())
                 .value_hint(ValueHint::DirPath)
                 .help("Path to the project root directory")
                 .global(true)])
@@ -139,12 +142,14 @@ fn main() -> Result<()> {
     };
 
     let project = {
-        let project_root = matches
-            .get_one::<String>("project")
-            .map(PathBuf::from)
-            .or_else(get_init_cwd)
-            .ok_or(errors::ProjectNotFound)?;
-        Project::new(project_root)?
+        if let Some(project_root) = matches.get_one::<PathBuf>("project") {
+            Project::new(project_root.clone())?
+        } else {
+            Project::locate(
+                get_init_cwd()
+                    .ok_or_else(|| miette!("Failed to determine current working directory"))?,
+            )?
+        }
     };
 
     let options = {
