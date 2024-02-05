@@ -6,18 +6,6 @@ use quake_core::prelude::*;
 use quake_core::utils::get_init_cwd;
 use quake_engine::{Engine, EngineOptions};
 
-/// Parse a config property consisting of a single key-value pair in the form
-/// `PROPERTY=VALUE`.
-fn parse_config_property(s: &str) -> Result<(String, String)> {
-    let pos = s.find('=').ok_or_else(|| {
-        error!(
-            code = "quake::cli::invalid_config_property",
-            "Invalid config property `{s}`"
-        )
-    })?;
-    Ok((s[..pos].to_owned(), s[pos + 1..].to_owned()))
-}
-
 fn main() -> Result<()> {
     let online_docs_url = option_env!("QUAKE_ONLINE_DOCS").unwrap_or("https://docs.quake.build/");
     let _offline_docs_url = option_env!("QUAKE_OFFLINE_DOCS");
@@ -77,23 +65,6 @@ fn main() -> Result<()> {
                 .value_hint(ValueHint::DirPath)
                 .help("Path to the project root directory")
                 .global(true)])
-            .next_help_heading("Configuration")
-            .args([
-                Arg::new("config")
-                    .short('c')
-                    .long("config")
-                    .value_name("FILE")
-                    .help("Load from a configuration file")
-                    .action(ArgAction::Append)
-                    .global(true),
-                Arg::new("config-prop")
-                    .short('C')
-                    .value_name("PROPERTY=VALUE")
-                    .value_parser(parse_config_property)
-                    .action(ArgAction::Append)
-                    .help("Set a configuration property")
-                    .global(true),
-            ])
             .next_help_heading("Output handling")
             .args([
                 Arg::new("quiet")
