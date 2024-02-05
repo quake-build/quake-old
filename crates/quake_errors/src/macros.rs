@@ -50,6 +50,7 @@ macro_rules! error {
 #[macro_export]
 macro_rules! bail {
     ($($key:ident = $value:expr,)* $fmt:literal $($arg:tt)*) => {
+        use ::core::result::Result::Err;
         return $crate::private::Err(
             $crate::error!(
                 code = $crate::errors::QUAKE_OTHER_ERROR_CODE,

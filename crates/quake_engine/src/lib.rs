@@ -69,6 +69,7 @@ impl Engine {
         };
 
         if !engine.load()? {
+            log_fatal!("failed to load engine");
             exit(exit_codes::LOAD_FAIL);
         }
 
@@ -209,6 +210,7 @@ impl Engine {
                 self.handles.lock().remove(&task_id);
 
                 if !success {
+                    log_fatal!("aborting due to failed task");
                     self.abort_all();
                     exit(exit_codes::TASK_RUN_FAIL);
                 }
@@ -306,12 +308,12 @@ impl Engine {
                 .as_ref()
                 .expect("no metadata defined for task call");
             if !is_dirty(metadata)? {
-                print_info("skipping task", &name);
+                log_info!("skipping task", &name);
 
                 return Ok((call_id, true));
             }
 
-            print_info("running task", &name);
+            log_info!("running task", &name);
 
             let result = eval_task_run_body(call_id, call.span, &engine_state, &mut stack);
 
@@ -326,7 +328,7 @@ impl Engine {
             };
 
             if !success {
-                print_error("task failed", &name);
+                log_error!("task failed", &name);
             }
 
             Ok((call_id, success))

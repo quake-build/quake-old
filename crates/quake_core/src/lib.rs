@@ -1,4 +1,4 @@
-pub use ::quake_errors as errors;
+pub use {quake_errors as errors, quake_log as log};
 
 pub mod metadata;
 pub mod project;
@@ -15,9 +15,9 @@ pub mod exit_codes {
 }
 
 pub mod prelude {
-    pub use ::quake_errors::*;
+    pub use quake_errors::*;
+    pub use quake_log::{log_error, log_fatal, log_info, log_warning};
 
     pub use crate::exit_codes;
     pub use crate::project::*;
-    pub use crate::utils::{print_error, print_info, print_warning};
 }

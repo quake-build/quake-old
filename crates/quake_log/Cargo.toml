@@ -1,0 +1,16 @@
+[package]
+name = "quake_log"
+version = "0.1.0"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+anstream = "0.6.11"
+anstyle = "1.0.5"
+serde = { workspace = true, optional = true }
+
+[lints]
+workspace = true
+
+[features]
+default = ["serde"]

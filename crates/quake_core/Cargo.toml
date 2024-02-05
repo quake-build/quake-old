@@ -7,8 +7,8 @@ edition.workspace = true
 
 [dependencies]
 quake_errors = { path = "../quake_errors" }
+quake_log = { path = "../quake_log" }
 
-nu-ansi-term.workspace = true
 nu-protocol.workspace = true
 serde = { workspace = true, features = ["rc"], optional = true }
 

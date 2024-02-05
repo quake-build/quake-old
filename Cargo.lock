@@ -2172,9 +2172,9 @@ dependencies = [
 name = "quake_core"
 version = "0.1.0"
 dependencies = [
- "nu-ansi-term",
  "nu-protocol",
  "quake_errors",
+ "quake_log",
  "serde",
 ]
 
@@ -2204,6 +2204,15 @@ dependencies = [
  "miette",
  "nu-protocol",
  "thiserror",
+]
+
+[[package]]
+name = "quake_log"
+version = "0.1.0"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "serde",
 ]
 
 [[package]]
