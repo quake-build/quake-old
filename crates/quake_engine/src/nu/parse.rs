@@ -1,10 +1,11 @@
-use std::mem;
 use std::sync::Arc;
 
 use nu_parser::{discover_captures_in_expr, parse_internal_call};
-use nu_protocol::ast::{Argument, Block, Call, Expr, Expression, PipelineElement};
+use nu_protocol::ast::{
+    Argument, Block, Call, Expr, Expression, ExternalArgument, MatchPattern, Pattern, RecordItem,
+};
 use nu_protocol::engine::StateWorkingSet;
-use nu_protocol::{span, Category, Span, Spanned, Type};
+use nu_protocol::{span, Category, DeclId, Spanned, Type};
 
 use quake_core::metadata::{Metadata, Task, TaskFlags};
 use quake_core::prelude::*;
@@ -21,13 +22,16 @@ pub fn parse_metadata(
     let mut lazy_errors = Vec::new();
 
     // register tasks in the metadata, creating new depends decls for each task
-    for call in calls_in_block(working_set, "def-task", block, false) {
-        match parse_def_task(call, working_set, metadata) {
+    modify_calls(
+        working_set,
+        b"def-task",
+        block,
+        |working_set, call| match parse_def_task(call, working_set, metadata) {
             Ok(LazyResult::Failure { errors }) => lazy_errors.extend(errors),
             Err(err) => lazy_errors.push(err),
             _ => {}
-        }
-    }
+        },
+    );
 
     if lazy_errors.is_empty() {
         Ok(())
@@ -35,8 +39,6 @@ pub fn parse_metadata(
         Err(lazy_errors)
     }
 }
-
-// TODO impl try? with fast failure and lazy failure
 
 #[derive(Debug, Clone)]
 enum LazyResult {
@@ -62,7 +64,7 @@ impl LazyResult {
 ///
 /// Returns whether or not the call was successfully
 fn parse_def_task(
-    call: &mut Call,
+    call: &mut Box<Call>,
     working_set: &mut StateWorkingSet<'_>,
     metadata: &mut Metadata,
 ) -> ShellResult<LazyResult> {
@@ -163,15 +165,16 @@ fn parse_def_task(
     };
 
     if let Some(decl_body) = decl_body {
-        let mut block = mem::take(working_set.get_block_mut(decl_body));
-
         // add the task call scope ID variable to the block's captures
+        let mut block = working_set.get_block_mut(decl_body).clone();
         block.captures.push(QUAKE_SCOPE_VARIABLE_ID);
 
         // transform `Depends` calls to `DependsTask`
-        for call in calls_in_block(working_set, "depends", &mut block, true) {
-            transform_depends(call, working_set, metadata)?;
-        }
+        modify_calls(working_set, b"depends", &mut block, |working_set, call| {
+            if let Err(err) = transform_depends(call, working_set, metadata) {
+                late_errors.push(err);
+            }
+        });
 
         *working_set.get_block_mut(decl_body) = block;
     }
@@ -287,54 +290,155 @@ fn transform_depends(
     Ok(())
 }
 
-/// Get all valid calls of a particular declaration inside a given block.
-///
-/// ## Panics
-///
-/// If there is no corresponding decl in the working set for the given command.
-fn calls_in_block<'a>(
-    working_set: &StateWorkingSet<'_>,
-    decl_name: &str,
-    block: &'a mut Block,
-    skip_errors: bool,
-) -> impl Iterator<Item = &'a mut Box<Call>> {
-    let decl_id = working_set
-        .find_decl(decl_name.as_bytes())
-        .unwrap_or_else(|| panic_bug!("command {decl_name} not defined"));
+fn modify_calls(
+    working_set: &mut StateWorkingSet<'_>,
+    decl_name: &[u8],
+    block: &mut Block,
+    mut func: impl FnMut(&mut StateWorkingSet<'_>, &mut Box<Call>),
+) {
+    let decl_id = working_set.find_decl(decl_name).expect("invalid decl name");
+    modify_calls_in_block(working_set, decl_id, block, &mut func);
+}
 
-    let error_spans: Vec<Span> = if skip_errors {
-        let block_span = block.span.unwrap();
-        working_set
-            .parse_errors
-            .iter()
-            .map(ParseError::span)
-            .filter(|s| block_span.contains_span(*s))
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    // FIXME: this only catches top-level calls. need to refactor to recurse
-    // through the entire AST
-    block
+fn modify_calls_in_block(
+    working_set: &mut StateWorkingSet<'_>,
+    decl_id: DeclId,
+    block: &mut Block,
+    func: &mut dyn FnMut(&mut StateWorkingSet<'_>, &mut Box<Call>),
+) {
+    for expr in block
         .pipelines
         .iter_mut()
-        .flat_map(|p| p.elements.iter_mut())
-        .filter_map(move |pe| {
-            if let PipelineElement::Expression(
-                _,
-                Expression {
-                    expr: Expr::Call(call),
-                    span: call_span,
-                    ..
-                },
-            ) = pe
-                && call.decl_id == decl_id
-                && !(skip_errors && error_spans.iter().any(|s| call_span.contains_span(*s)))
-            {
-                Some(call)
-            } else {
-                None
+        .flat_map(|p| &mut p.elements)
+        .map(|pe| pe.expression_mut())
+    {
+        modify_calls_in_expr(working_set, decl_id, expr, func);
+    }
+}
+
+fn modify_calls_in_expr(
+    working_set: &mut StateWorkingSet<'_>,
+    decl_id: DeclId,
+    expr: &mut Expression,
+    func: &mut dyn FnMut(&mut StateWorkingSet<'_>, &mut Box<Call>),
+) {
+    match &mut expr.expr {
+        Expr::Call(call) => {
+            if call.decl_id == decl_id {
+                func(working_set, call);
             }
-        })
+
+            for arg in &mut call.arguments {
+                if let Some(expr) = arg.expression_mut() {
+                    modify_calls_in_expr(working_set, decl_id, expr, func);
+                }
+            }
+        }
+        Expr::Range(a, b, c, _) => {
+            for expr in [a, b, c].into_iter().flatten() {
+                modify_calls_in_expr(working_set, decl_id, expr, func);
+            }
+        }
+        Expr::ExternalCall(expr, args, _) => {
+            modify_calls_in_expr(working_set, decl_id, expr, func);
+
+            for arg in args {
+                let (ExternalArgument::Regular(expr) | ExternalArgument::Spread(expr)) = arg;
+                modify_calls_in_expr(working_set, decl_id, expr, func);
+            }
+        }
+        Expr::RowCondition(block_id)
+        | Expr::Subexpression(block_id)
+        | Expr::Block(block_id)
+        | Expr::Closure(block_id) => {
+            let mut block = working_set.get_block_mut(*block_id).clone();
+            modify_calls_in_block(working_set, decl_id, &mut block, func);
+            *working_set.get_block_mut(*block_id) = block;
+        }
+        Expr::UnaryNot(expr)
+        | Expr::Keyword(_, _, expr)
+        | Expr::ValueWithUnit(expr, _)
+        | Expr::Spread(expr) => modify_calls_in_expr(working_set, decl_id, expr, func),
+        Expr::BinaryOp(a, b, c) => {
+            for expr in [a, b, c].into_iter() {
+                modify_calls_in_expr(working_set, decl_id, expr, func);
+            }
+        }
+        Expr::MatchBlock(match_arms) => {
+            for (pat, expr) in match_arms {
+                modify_calls_in_pattern(working_set, decl_id, pat, func);
+                modify_calls_in_expr(working_set, decl_id, expr, func);
+            }
+        }
+        Expr::List(exprs) | Expr::StringInterpolation(exprs) => {
+            for expr in exprs {
+                modify_calls_in_expr(working_set, decl_id, expr, func);
+            }
+        }
+        Expr::Table(headers, cells) => {
+            for expr in headers.iter_mut().chain(cells.iter_mut().flatten()) {
+                modify_calls_in_expr(working_set, decl_id, expr, func);
+            }
+        }
+        Expr::Record(records) => {
+            for item in records {
+                match item {
+                    RecordItem::Pair(a, b) => {
+                        modify_calls_in_expr(working_set, decl_id, a, func);
+                        modify_calls_in_expr(working_set, decl_id, b, func);
+                    }
+                    RecordItem::Spread(_, expr) => {
+                        modify_calls_in_expr(working_set, decl_id, expr, func)
+                    }
+                }
+            }
+        }
+        Expr::FullCellPath(path) => {
+            modify_calls_in_expr(working_set, decl_id, &mut path.head, func)
+        }
+        Expr::Bool(_)
+        | Expr::Int(_)
+        | Expr::Float(_)
+        | Expr::Binary(_)
+        | Expr::Var(_)
+        | Expr::VarDecl(_)
+        | Expr::Operator(_)
+        | Expr::DateTime(_)
+        | Expr::Filepath(_, _)
+        | Expr::Directory(_, _)
+        | Expr::GlobPattern(_, _)
+        | Expr::String(_)
+        | Expr::CellPath(_)
+        | Expr::ImportPattern(_)
+        | Expr::Overlay(_)
+        | Expr::Signature(_)
+        | Expr::Nothing
+        | Expr::Garbage => {}
+    }
+}
+
+fn modify_calls_in_pattern(
+    working_set: &mut StateWorkingSet<'_>,
+    decl_id: DeclId,
+    pat: &mut MatchPattern,
+    func: &mut dyn FnMut(&mut StateWorkingSet<'_>, &mut Box<Call>),
+) {
+    if let Some(expr) = &mut pat.guard {
+        modify_calls_in_expr(working_set, decl_id, expr, func);
+    }
+
+    match &mut pat.pattern {
+        Pattern::Record(records) => {
+            for (_, pat) in records {
+                modify_calls_in_pattern(working_set, decl_id, pat, func);
+            }
+        }
+        Pattern::List(pats) | Pattern::Or(pats) => {
+            for pat in pats {
+                modify_calls_in_pattern(working_set, decl_id, pat, func);
+            }
+        }
+        Pattern::Value(expr) => modify_calls_in_expr(working_set, decl_id, expr, func),
+        _ => {}
+    }
 }
