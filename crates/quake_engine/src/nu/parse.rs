@@ -123,6 +123,7 @@ fn parse_def_task(
         decl_id
     };
 
+    // do we have a decl body? (i.e. the first of two blocks)
     if let Some(decl_body) = decl_body {
         let mut block = mem::take(working_set.get_block_mut(decl_body));
 
@@ -135,6 +136,12 @@ fn parse_def_task(
         }
 
         *working_set.get_block_mut(decl_body) = block;
+    } else {
+        // remove the error indicating a missing argument
+        let call_span = call.span();
+        working_set
+            .parse_errors
+            .retain(|e| !matches!(e, ParseError::MissingPositional(_, span, _) if call_span.contains_span(*span)));
     }
 
     // note: errors when task has already been defined

@@ -6,7 +6,7 @@ use nu_protocol::engine::{Closure, Command, EngineState, Stack};
 use nu_protocol::{
     Category, PipelineData, ShellError, Signature, Span, Spanned, SyntaxShape, Type, Value,
 };
-use quake_core::errors::{IntoDiagnostic, IntoShellResult};
+use quake_core::errors::IntoShellResult;
 use quake_core::metadata::{Task, TaskCallId, TaskFlags};
 
 use crate::state::State;
@@ -193,10 +193,7 @@ impl Command for Depends {
         // emit an error if used in an invalid location
         //
         // TODO do this during the parse phase
-        State::from_engine_state(engine_state)
-            .check_in_scope(stack, call.head)
-            .into_diagnostic()
-            .into_shell_result()?;
+        State::from_engine_state(engine_state).check_in_scope(stack, call.head)?;
 
         Ok(PipelineData::empty())
     }
