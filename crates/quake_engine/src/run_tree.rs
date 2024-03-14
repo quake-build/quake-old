@@ -56,13 +56,9 @@ fn generate_run_tree_inner(
 
     let mut node = RunNode::new(call_id);
 
-    let call = metadata.get_task_call(call_id).expect("invalid task ID");
+    let call = metadata.get_task_call(call_id).unwrap();
 
-    let Some(call_metadata) = call.metadata.as_ref() else {
-        return node;
-    };
-
-    for dep in &call_metadata.dependencies {
+    for dep in &call.metadata.dependencies {
         if included.contains(dep) {
             continue;
         }

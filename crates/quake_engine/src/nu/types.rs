@@ -4,13 +4,13 @@
 use std::sync::Arc;
 
 use nu_protocol::{CustomValue, ShellError, Span, Value};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use serde::Serialize;
 
 /// The global [`State`](crate::state::State) as stored in
 /// [`QUAKE_VARIABLE_ID`](crate::QUAKE_VARIABLE_ID).
 #[derive(Clone, Debug)]
-pub struct State(pub Arc<Mutex<crate::state::State>>);
+pub struct State(pub Arc<RwLock<crate::state::State>>);
 
 impl CustomValue for State {
     fn clone_value(&self, span: Span) -> Value {

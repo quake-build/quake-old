@@ -18,6 +18,7 @@ nu-parser = { git = "https://github.com/quake-build/nushell" }
 nu-path = { git = "https://github.com/quake-build/nushell" }
 nu-protocol = { git = "https://github.com/quake-build/nushell" }
 nu-utils = { git = "https://github.com/quake-build/nushell" }
+parking_lot = { version = "0.12.1", features = ["arc_lock", "send_guard"] }
 serde = { version = "1.0.196", features = ["derive"] }
 
 [workspace.lints.rustdoc]

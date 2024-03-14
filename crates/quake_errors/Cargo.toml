@@ -6,7 +6,7 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-miette = "5.10.0"
+miette = "7.1.0"
 nu-protocol.workspace = true
 thiserror = "1.0.56"
 

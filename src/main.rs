@@ -133,7 +133,7 @@ fn main() -> Result<()> {
         EngineOptions { quiet }
     };
 
-    let mut engine = Engine::new(project, options)?;
+    let mut engine = Engine::load(project, options)?;
 
     match matches.subcommand() {
         None => {
@@ -144,7 +144,7 @@ fn main() -> Result<()> {
         }
         Some(("list", _)) => {
             let metadata = engine.metadata();
-            let tasks: Vec<_> = metadata.task_stubs().map(|t| &t.name.item).collect();
+            let tasks: Vec<_> = metadata.task().map(|t| &t.name.item).collect();
 
             if tasks.is_empty() {
                 println!("No available tasks.");

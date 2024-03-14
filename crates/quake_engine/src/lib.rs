@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![feature(try_trait_v2)]
 #![feature(result_flattening)]
 #![allow(dead_code)]
 
@@ -11,22 +12,20 @@ use std::sync::Arc;
 use nu_parser::parse;
 use nu_protocol::ast::Argument;
 use nu_protocol::engine::{EngineState, Stack, StateWorkingSet};
-use nu_protocol::{report_error, report_error_new, ShellError, Span};
-use parking_lot::{Mutex, MutexGuard};
+use nu_protocol::{report_error, report_error_new, Span};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use tokio::runtime::Runtime;
 use tokio::task::{AbortHandle, JoinSet};
 
-use quake_core::exit_codes;
 use quake_core::metadata::{Metadata, TaskCallId};
 use quake_core::prelude::*;
 use quake_core::utils::is_dirty;
 
 use crate::nu::eval::{eval_block, eval_task_decl_body, eval_task_run_body};
-use crate::nu::parse::parse_def_tasks;
+use crate::nu::parse::parse_metadata;
 use crate::nu::{create_engine_state, create_stack};
 use crate::run_tree::{generate_run_tree, RunNode};
 use crate::state::State;
-use crate::utils::*;
 
 mod nu;
 mod run_tree;
@@ -41,7 +40,7 @@ pub struct EngineOptions {
 pub struct Engine {
     project: Project,
     _options: EngineOptions,
-    state: Arc<Mutex<State>>,
+    state: Arc<RwLock<State>>,
     engine_state: EngineState,
     stack: Stack,
     task_pool: JoinSet<Result<(TaskCallId, bool)>>,
@@ -49,27 +48,27 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(project: Project, options: EngineOptions) -> Result<Self> {
+    pub fn load(project: Project, options: EngineOptions) -> Result<Self> {
         #[cfg(windows)]
         nu_ansi_term::enable_ansi_support();
 
-        let internal_state = Arc::new(Mutex::new(State::new()));
+        let state = Arc::new(RwLock::new(State::new()));
 
-        let engine_state = create_engine_state(internal_state.clone())?;
+        let engine_state = create_engine_state(state.clone())?;
         let stack = create_stack(project.project_root());
 
         let mut engine = Self {
             project,
             _options: options,
-            state: internal_state,
+            state,
             engine_state,
             stack,
             task_pool: JoinSet::new(),
             handles: Mutex::new(HashMap::new()),
         };
 
-        if !engine.load()? {
-            log_fatal!("failed to load engine");
+        if !engine.load_script()? {
+            log_fatal!("failed to load build script");
             exit(exit_codes::LOAD_FAIL);
         }
 
@@ -77,7 +76,7 @@ impl Engine {
     }
 
     /// Load and evaluate the project's build script.
-    fn load(&mut self) -> Result<bool> {
+    fn load_script(&mut self) -> Result<bool> {
         let build_script = self.project.build_script();
         let filename = build_script
             .strip_prefix(self.project.project_root())
@@ -99,20 +98,32 @@ impl Engine {
     /// Evaluate the source of a build file, returning whether or not an error
     /// occurred.
     fn eval_source(&mut self, source: &[u8], filename: &str) -> Result<bool> {
+        // parse the build script
         let (block, delta) = {
             let mut working_set = StateWorkingSet::new(&self.engine_state);
 
             // perform a first-pass parse over the file
             let mut output = parse(&mut working_set, Some(filename), source, false);
 
-            // re-parse `def-task` calls, populating the metadata with the corresponding
-            // task stubs
-            let mut state = self.state.lock();
-            parse_def_tasks(&mut output, &mut working_set, &mut state.metadata);
+            let mut success = true;
 
+            // extract task metadata by reparsing
+            let mut state = self.state.write();
+            if let Err(errors) = parse_metadata(&mut output, &mut state.metadata, &mut working_set)
+            {
+                success = false;
+                for error in &errors {
+                    report_error(&working_set, error);
+                }
+            };
+
+            // TODO print more than one error?
             if let Some(err) = working_set.parse_errors.first() {
-                set_last_exit_code(&mut self.stack, 101);
+                success = false;
                 report_error(&working_set, err);
+            }
+
+            if !success {
                 return Ok(false);
             }
 
@@ -121,12 +132,11 @@ impl Engine {
 
         // merge updated state
         if let Err(err) = self.engine_state.merge_delta(delta) {
-            set_last_exit_code(&mut self.stack, 101);
             report_error_new(&self.engine_state, &err);
             return Ok(false);
         }
 
-        // evaluate the build script again,
+        // evaluate the build script
         let result = eval_block(&block, &self.engine_state, &mut self.stack);
         if let Err(err) = &result {
             report_error_new(&self.engine_state, err);
@@ -139,13 +149,12 @@ impl Engine {
         &self.project
     }
 
-    /// Get the metadata stored in the internal state.
+    /// Get a read-only reference to the metadata stored in the internal state.
     ///
-    /// Note that this locks the internal state (which is used elsewhere
-    /// frequently, including in command implementations), so shouldn't be
-    /// held onto for longer than is necessary.
-    pub fn metadata(&self) -> impl std::ops::Deref<Target = Metadata> + '_ {
-        MutexGuard::map(self.state.lock(), |s| &mut s.metadata)
+    /// Note that this puts a reader lock on the underlying [`RwLock`], so
+    /// shouldn't be held onto for longer than is necessary.
+    pub fn metadata(&self) -> impl std::ops::Deref<Target = Metadata> + '_ + Send + Sync {
+        RwLockReadGuard::map(self.state.read(), |s| &s.metadata)
     }
 
     pub fn run(&mut self, task_name: &str, arguments: impl Into<Vec<Argument>>) -> Result<()> {
@@ -180,11 +189,7 @@ impl Engine {
                     // don't add any more tasks if this one is blocking
                     let metadata = self.metadata();
                     let call = metadata.get_task_call(node.call_id).unwrap();
-                    let concurrent = metadata
-                        .get_task_stub(call.task_id)
-                        .unwrap()
-                        .flags
-                        .concurrent;
+                    let concurrent = metadata.get_task(call.task_id).unwrap().flags.concurrent;
                     if !concurrent {
                         break;
                     }
@@ -228,12 +233,13 @@ impl Engine {
         arguments: Vec<Argument>,
     ) -> Result<TaskCallId> {
         let call_id = {
-            let mut state = self.state.lock();
+            let mut state = self.state.write();
 
-            let task_id = state.metadata.find_task_stub_id(task_name)?;
+            let task_id = state.metadata.find_task_id(task_name, None)?;
             state
                 .metadata
-                .register_task_call(task_id, arguments, Span::unknown())
+                .register_task_call(task_id, Span::unknown(), arguments, Vec::new())
+                .unwrap()
         };
 
         match self.populate_metadata_for_call_id(call_id) {
@@ -256,18 +262,17 @@ impl Engine {
             return Ok(false);
         }
 
-        // again avoiding deadlock, cheap clone
-        let call = self
+        // copy out dependencies to avoid deadlock between readers/writers
+        let dependencies = self
             .state
-            .lock()
+            .read()
             .metadata
-            .get_task_call(call_id)
+            .task_call_metadata(call_id)
             .unwrap()
-            .metadata
-            .clone()
-            .expect("no metadata defined for task, was decl body run?");
+            .dependencies
+            .clone();
 
-        for dep_call_id in &call.dependencies {
+        for dep_call_id in &dependencies {
             if !self.populate_metadata_for_call_id(*dep_call_id)? {
                 return Ok(false);
             }
@@ -292,30 +297,35 @@ impl Engine {
         engine_state.ctrlc = Some(ctrlc.clone());
 
         let call_id = node.call_id;
-        let call = self.metadata().get_task_call(call_id).unwrap().clone();
 
-        let name = self
-            .metadata()
-            .get_task_stub(call.task_id)
-            .expect("invalid task ID for call")
-            .name
-            .item
-            .clone();
+        let state = self.state.clone();
 
         let abort_handle = self.task_pool.spawn(async move {
-            let metadata = call
-                .metadata
-                .as_ref()
-                .expect("no metadata defined for task call");
-            if !is_dirty(metadata)? {
-                log_info!("skipping task", &name);
+            let (name, call_span) = {
+                let state = state.read();
 
-                return Ok((call_id, true));
-            }
+                let call = state.metadata.get_task_call(call_id).unwrap();
+                let call_span = call.span;
+                let name = state
+                    .metadata
+                    .get_task(call.task_id)
+                    .unwrap()
+                    .name
+                    .item
+                    .clone();
+
+                if !is_dirty(&call.metadata)? {
+                    log_info!("skipping task", &name);
+
+                    return Ok((call_id, true));
+                }
+
+                (name, call_span)
+            };
 
             log_info!("running task", &name);
 
-            let result = eval_task_run_body(call_id, call.span, &engine_state, &mut stack);
+            let result = eval_task_run_body(call_id, call_span, &engine_state, &mut stack);
 
             let success = match result {
                 // silently ignore intentional interrupt errors

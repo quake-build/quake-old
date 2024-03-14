@@ -10,6 +10,7 @@ quake_errors = { path = "../quake_errors" }
 quake_log = { path = "../quake_log" }
 
 nu-protocol.workspace = true
+parking_lot.workspace = true
 serde = { workspace = true, features = ["rc"], optional = true }
 
 [lints]
@@ -17,4 +18,4 @@ workspace = true
 
 [features]
 default = ["serde"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "parking_lot/serde"]

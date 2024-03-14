@@ -6,9 +6,11 @@ use nu_cmd_lang::create_default_context;
 use nu_command::add_shell_command_context;
 use nu_protocol::engine::{EngineState, Stack, StateWorkingSet, PWD_ENV};
 use nu_protocol::{Span, Type, Value, VarId};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 
 use crate::state::State;
+
+// pub(self) mod custom_syntax;
 
 pub mod commands;
 pub mod eval;
@@ -28,11 +30,11 @@ pub const QUAKE_VARIABLE_ID: VarId = 5;
 /// in order to retrieve scoped state from the global state.
 pub const QUAKE_SCOPE_VARIABLE_ID: VarId = 6;
 
-/// The custom nushell [`Category`](::nu_protocol::Category) assigned to quake
-/// items.
+/// The name for the custom nushell [`Category`](::nu_protocol::Category)
+/// assigned to quake commands.
 pub const QUAKE_CATEGORY: &str = "quake";
 
-pub fn create_engine_state(state: Arc<Mutex<State>>) -> crate::Result<EngineState> {
+pub fn create_engine_state(state: Arc<RwLock<State>>) -> crate::Result<EngineState> {
     let mut engine_state = add_shell_command_context(create_default_context());
 
     // TODO merge with PWD logic below

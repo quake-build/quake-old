@@ -1,24 +1,25 @@
-use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use nu_protocol::ast::Argument;
-use nu_protocol::{BlockId, Signature, Span, Spanned};
+use nu_protocol::{BlockId, DeclId, Span, Spanned, Value, VarId};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
-pub type TaskStubId = usize;
+pub type TaskId = usize;
 
 pub type TaskCallId = usize;
 
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Metadata {
-    task_calls: Vec<TaskCall>,
-    task_stubs: Vec<TaskStub>,
+    tasks: Vec<Arc<Task>>,
+    task_calls: Vec<Arc<RwLock<TaskCall>>>,
 }
 
 impl Metadata {
@@ -26,150 +27,42 @@ impl Metadata {
         Default::default()
     }
 
-    pub fn task_stubs(&self) -> impl Iterator<Item = &TaskStub> {
-        self.task_stubs.iter()
+    pub fn task(&self) -> impl Iterator<Item = &Arc<Task>> {
+        self.tasks.iter()
     }
 
-    pub fn get_task_call(&self, call_id: TaskCallId) -> Option<&TaskCall> {
-        self.task_calls.get(call_id)
+    pub fn get_task(&self, task_id: TaskId) -> Option<&Arc<Task>> {
+        self.tasks.get(task_id)
     }
 
-    pub fn find_task_call(
-        &self,
-        name: &str,
-        arguments: &[Argument],
-    ) -> Result<(TaskCallId, &TaskCall)> {
-        self.task_calls
+    pub fn find_task(&self, name: &str, span: Option<Span>) -> Result<&Arc<Task>> {
+        self.tasks
             .iter()
-            .enumerate()
-            .find(|(_, call)| {
-                self.task_stubs[call.task_id].name.item == name && call.arguments == arguments
-            })
+            .find(|t| t.name.item == name)
             .ok_or_else(|| {
                 errors::TaskNotFound {
                     name: name.to_owned(),
+                    span,
                 }
                 .into()
             })
     }
 
-    pub fn find_task_call_mut(
-        &mut self,
-        name: &str,
-        arguments: &[Argument],
-    ) -> Result<(TaskCallId, &mut TaskCall)> {
-        self.task_calls
-            .iter_mut()
-            .enumerate()
-            .find(|(_, call)| {
-                self.task_stubs[call.task_id].name.item == name && call.arguments == arguments
-            })
+    pub fn find_task_id(&self, name: &str, span: Option<Span>) -> Result<TaskId> {
+        self.tasks
+            .iter()
+            .position(|t| t.name.item == name)
             .ok_or_else(|| {
                 errors::TaskNotFound {
                     name: name.to_owned(),
+                    span,
                 }
                 .into()
             })
     }
 
-    /// Insert a task call.
-    ///
-    /// This will always result in a new task call ID, even if an otherwise
-    /// identical one already exists, so that individual invocations are
-    /// tracked.
-    ///
-    /// For updating the metadata inside of a task call, see
-    /// [`insert_task_call_metadata`] and [`clear_all_task_call_metadata`].
-    ///
-    /// ## Panics
-    ///
-    /// Panics when passed an invalid task ID.
-    pub fn register_task_call(
-        &mut self,
-        task_id: TaskStubId,
-        arguments: Vec<Argument>,
-        span: Span,
-    ) -> TaskCallId {
-        assert!(task_id < self.task_stubs.len(), "invalid task_id");
-
-        let entry = TaskCall {
-            task_id,
-            arguments,
-            span,
-            metadata: None,
-        };
-
-        self.task_calls.push(entry);
-        self.task_calls.len() - 1
-    }
-
-    /// Insert (or update) metadata for a task call.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if `call_id` is invalid.
-    pub fn insert_task_call_metadata(
-        &mut self,
-        call_id: TaskCallId,
-        metadata: Arc<TaskCallMetadata>,
-    ) {
-        assert!(call_id < self.task_calls.len(), "invalid call_id");
-        self.task_calls[call_id].metadata = Some(metadata);
-    }
-
-    /// Recursively clear the metadata for a given call and for all of its
-    /// dependencies.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if `call_id` is invalid.
-    pub fn clear_all_task_call_metadata(&mut self, call_id: TaskCallId) {
-        assert!(call_id < self.task_calls.len(), "invalid call_id");
-
-        let Some(dependencies) = self.task_calls[call_id]
-            .metadata
-            .clone()
-            .map(|m| m.dependencies.clone())
-        else {
-            return;
-        };
-        for dep in dependencies {
-            self.clear_all_task_call_metadata(dep);
-        }
-
-        self.task_calls[call_id].metadata = None;
-    }
-
-    pub fn get_task_stub(&self, task_id: TaskStubId) -> Option<&TaskStub> {
-        self.task_stubs.get(task_id)
-    }
-
-    pub fn find_task_stub(&self, task_name: &str) -> Result<&TaskStub> {
-        self.task_stubs
-            .iter()
-            .find(|t| t.name.item == task_name)
-            .ok_or_else(|| {
-                errors::TaskNotFound {
-                    name: task_name.to_owned(),
-                }
-                .into()
-            })
-    }
-
-    pub fn find_task_stub_id(&self, task_name: &str) -> Result<TaskStubId> {
-        self.task_stubs
-            .iter()
-            .position(|t| t.name.item == task_name)
-            .ok_or_else(|| {
-                errors::TaskNotFound {
-                    name: task_name.to_owned(),
-                }
-                .into()
-            })
-    }
-
-    pub fn add_task_stub(&mut self, name: String, stub: TaskStub) -> Result<TaskStubId> {
-        if let Ok(existing) = self.find_task_stub(&name) {
+    pub fn register_task(&mut self, name: String, task: impl Into<Arc<Task>>) -> Result<TaskId> {
+        if let Ok(existing) = self.find_task(&name, None) {
             return Err(errors::TaskDuplicateDefinition {
                 name,
                 existing_span: existing.name.span,
@@ -177,36 +70,82 @@ impl Metadata {
             .into());
         }
 
-        let task_id = self.task_stubs.len();
-        self.task_stubs.push(stub);
-
+        let task_id = self.next_task_id();
+        self.tasks.push(task.into());
         Ok(task_id)
     }
 
-    pub fn add_task_stubs(&mut self, stubs: HashMap<String, TaskStub>) -> Result<()> {
-        for (name, stub) in stubs {
-            self.add_task_stub(name, stub)?;
-        }
+    pub fn next_task_id(&self) -> TaskId {
+        self.tasks.len()
+    }
 
-        Ok(())
+    pub fn get_task_call(
+        &self,
+        call_id: TaskCallId,
+    ) -> Option<impl Deref<Target = TaskCall> + 'static + Send + Sync> {
+        self.task_calls.get(call_id).map(RwLock::read_arc)
+    }
+
+    /// Insert a task call with basic information provided.
+    ///
+    /// This will always result in a new task call ID, even if an otherwise
+    /// identical one already exists, so that individual invocations are
+    /// tracked.
+    ///
+    /// Returns `None` when there is no task for `task_id`.
+    pub fn register_task_call(
+        &mut self,
+        task_id: TaskId,
+        span: Span,
+        arguments: Vec<Argument>,
+        constants: Vec<(VarId, Value)>,
+    ) -> Option<TaskCallId> {
+        let _task = self.get_task(task_id)?;
+
+        let entry = Arc::new(RwLock::new(TaskCall {
+            task_id,
+            span,
+            arguments,
+            constants,
+            metadata: TaskCallMetadata::default(),
+        }));
+
+        self.task_calls.push(entry);
+        Some(self.task_calls.len() - 1)
+    }
+
+    pub fn task_call_metadata(
+        &self,
+        call_id: TaskCallId,
+    ) -> Option<impl Deref<Target = TaskCallMetadata> + '_ + Send + Sync> {
+        Some(RwLockReadGuard::map(
+            self.task_calls.get(call_id)?.read(),
+            |c: &TaskCall| &c.metadata,
+        ))
+    }
+
+    pub fn task_call_metadata_mut(
+        &self,
+        call_id: TaskCallId,
+    ) -> Option<impl DerefMut<Target = TaskCallMetadata> + '_ + Send + Sync> {
+        Some(RwLockWriteGuard::map(
+            self.task_calls.get(call_id)?.write(),
+            |c: &mut TaskCall| &mut c.metadata,
+        ))
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct TaskCall {
-    pub task_id: TaskStubId,
-    pub arguments: Vec<Argument>,
-    pub span: Span,
-    pub metadata: Option<Arc<TaskCallMetadata>>,
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct TaskCallMetadata {
-    pub dependencies: Vec<TaskCallId>,
-    pub sources: Vec<PathBuf>,
-    pub artifacts: Vec<PathBuf>,
+pub struct Task {
+    pub name: Spanned<String>,
+    pub flags: TaskFlags,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub depends_decl_id: Option<DeclId>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub decl_body: Option<BlockId>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub run_body: Option<BlockId>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -215,15 +154,20 @@ pub struct TaskFlags {
     pub concurrent: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct TaskStub {
-    pub name: Spanned<String>,
-    pub flags: TaskFlags,
-    pub signature: Box<Signature>,
+pub struct TaskCall {
+    pub task_id: TaskId,
     pub span: Span,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub decl_body: Option<BlockId>,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub run_body: Option<BlockId>,
+    pub arguments: Vec<Argument>,
+    pub constants: Vec<(VarId, Value)>,
+    pub metadata: TaskCallMetadata, // TODO box this as well
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct TaskCallMetadata {
+    pub dependencies: Vec<TaskCallId>,
+    pub sources: Vec<PathBuf>,
+    pub artifacts: Vec<PathBuf>,
 }

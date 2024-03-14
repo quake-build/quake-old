@@ -1,9 +1,15 @@
+use std::sync::Arc;
+
 use nu_engine::CallExt;
 use nu_protocol::ast::Call;
 use nu_protocol::engine::{Closure, Command, EngineState, Stack};
 use nu_protocol::{
-    Category, PipelineData, ShellError, Signature, Spanned, SyntaxShape, Type, Value,
+    Category, PipelineData, ShellError, Signature, Span, Spanned, SyntaxShape, Type, Value,
 };
+use quake_core::errors::{IntoDiagnostic, IntoShellResult};
+use quake_core::metadata::{Task, TaskCallId, TaskFlags};
+
+use crate::state::State;
 
 use super::QUAKE_CATEGORY;
 
@@ -28,17 +34,10 @@ impl Command for DefTask {
                 "allow this task to be run concurrently with others",
                 Some('c'),
             )
-            // HACK this should be a SyntaxShape::Signature, but declaring it as such here causes
-            // the second, optional block to get passed over, so we use a close enough syntactical
-            // approximation (a list<any>) and re-parse the span manually as a signature after the
-            // initial parsing pass
-            .required(
-                "params",
-                SyntaxShape::List(Box::new(SyntaxShape::Any)),
-                "parameters",
-            )
-            .optional("decl_body", SyntaxShape::Closure(None), "declaration body")
+            .required("params", SyntaxShape::Signature, "parameters")
+            .required("decl_body", SyntaxShape::Closure(None), "declaration body")
             .required("run_body", SyntaxShape::Closure(None), "run body")
+            .creates_scope()
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
 
@@ -75,11 +74,7 @@ impl Command for Subtask {
                 "allow this task to be run concurrently with others",
                 Some('c'),
             )
-            .required(
-                "run_body",
-                SyntaxShape::Closure(Some(vec![SyntaxShape::Any])),
-                "run body",
-            )
+            .required("run_body", SyntaxShape::Closure(None), "run body")
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
 
@@ -88,46 +83,73 @@ impl Command for Subtask {
         engine_state: &EngineState,
         stack: &mut Stack,
         call: &Call,
-        _input: PipelineData,
+        input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let _span = call.span();
+        let span = call.span();
+
+        let mut state = State::from_engine_state_mut(engine_state);
+        state.check_in_scope(stack, span)?;
 
         let (name, closure) = (
             call.req::<Spanned<String>>(engine_state, stack, 0)?,
             call.req::<Closure>(engine_state, stack, 1)?,
         );
+        let flags = TaskFlags {
+            concurrent: call.has_flag(engine_state, stack, "concurrent")?,
+        };
 
-        let _block = engine_state.get_block(closure.block_id);
+        let block = engine_state.get_block(closure.block_id);
 
-        // let state = State::from_engine_state(engine_state);
-        // {
-        //     let mut state = state.lock();
+        let mut constants = Vec::with_capacity(1);
 
-        //     let mut subtask = TaskMetadata::new(
-        //         name.clone(),
-        //         TaskKind::Subtask,
-        //         Some(closure.block_id),
-        //         call.has_flag("concurrent"),
-        //     );
+        if let Some(arg) = block.signature.required_positional.first() {
+            let expected_ty = arg.shape.to_type();
+            if let PipelineData::Value(value, _) = input {
+                let value_type = value.get_type();
 
-        //     if let Some(argument) = block
-        //         .signature
-        //         .required_positional
-        //         .first()
-        //         .and_then(|arg| arg.var_id)
-        //         .map(|v| (v, input.into_value(span)))
-        //     {
-        //         subtask.argument = Some(argument);
-        //     }
+                if !value_type.is_subtype(&expected_ty) {
+                    return Err(ShellError::OnlySupportsThisInputType {
+                        exp_input_type: expected_ty.to_string(),
+                        wrong_type: value_type.to_string(),
+                        dst_span: span,
+                        src_span: value.span(),
+                    });
+                }
 
-        //     let subtask_id = state.metadata.register_task(subtask);
+                constants.push((arg.var_id.unwrap(), value));
+            } else {
+                let arg_span = engine_state.get_var(arg.var_id.unwrap()).declaration_span;
+                return Err(ShellError::UnsupportedInput {
+                    msg: format!("subtask expected input of type {expected_ty}, but got nothing"),
+                    input: "argument defined here".to_owned(),
+                    msg_span: Span::new(span.start, span.start),
+                    input_span: arg_span,
+                });
+            }
+        }
 
-        //     let task = &mut state
-        //         .get_scope_mut(stack, span)
-        //         .map_err(IntoShellError::into_shell_error)?
-        //         .task;
-        //     task.dependencies.push(subtask_id);
-        // }
+        let task_id = state
+            .metadata
+            .register_task(
+                name.item.clone(),
+                Arc::new(Task {
+                    name: name.clone(),
+                    flags,
+                    depends_decl_id: None,
+                    decl_body: None,
+                    run_body: Some(closure.block_id),
+                }),
+            )
+            .into_shell_result()?;
+
+        let call_id = state
+            .metadata
+            .register_task_call(task_id, span, Vec::new(), constants)
+            .unwrap();
+        state
+            .scope_metadata_mut(stack, span)?
+            .dependencies
+            .push(call_id);
 
         Ok(PipelineData::Value(
             Value::String {
@@ -151,11 +173,6 @@ impl Command for Depends {
         Signature::build("depends")
             .input_output_types(vec![(Type::Nothing, Type::Nothing)])
             .required("dep_id", SyntaxShape::String, "dependency ID")
-            .rest(
-                "args",
-                SyntaxShape::Any,
-                "arguments to pass into the dependency",
-            )
             .allows_unknown_args()
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
@@ -171,26 +188,65 @@ impl Command for Depends {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let _span = call.span();
+        // (parse internal, replaced with `DependsTask`)
 
-        let _dep: Spanned<String> = call.req(engine_state, stack, 0)?;
-
-        // let state = State::from_engine_state(engine_state);
-        // {
-        //     let mut state = state.lock();
-        //     let dep_id = state
-        //         .metadata
-        //         .get_public_task_id(&dep.item)
-        //         .map_err(IntoShellError::into_shell_error)?;
-        //     state
-        //         .get_scope_mut(stack, span)
-        //         .map_err(IntoShellError::into_shell_error)?
-        //         .task
-        //         .dependencies
-        //         .push(dep_id);
-        // }
+        // emit an error if used in an invalid location
+        //
+        // TODO do this during the parse phase
+        State::from_engine_state(engine_state)
+            .check_in_scope(stack, call.head)
+            .into_diagnostic()
+            .into_shell_result()?;
 
         Ok(PipelineData::empty())
+    }
+}
+
+#[derive(Clone)]
+pub struct DependsTask {
+    pub task_id: TaskCallId,
+    pub signature: Box<Signature>,
+}
+
+impl Command for DependsTask {
+    fn name(&self) -> &str {
+        &self.signature.name
+    }
+
+    fn signature(&self) -> Signature {
+        *self.signature.clone()
+    }
+
+    fn usage(&self) -> &str {
+        &self.signature.usage
+    }
+
+    fn run(
+        &self,
+        engine_state: &EngineState,
+        stack: &mut Stack,
+        call: &Call,
+        _input: PipelineData,
+    ) -> Result<PipelineData, ShellError> {
+        let mut state = State::from_engine_state_mut(engine_state);
+        state.check_in_scope(stack, call.head)?;
+
+        // register the call_id and add it as a dependency
+        let call_id = state
+            .metadata
+            .register_task_call(
+                self.task_id,
+                call.span(),
+                call.arguments.clone(),
+                Vec::new(),
+            )
+            .unwrap();
+        state
+            .scope_metadata_mut(stack, call.head)?
+            .dependencies
+            .push(call_id);
+
+        Ok(PipelineData::Empty)
     }
 }
 
@@ -224,17 +280,13 @@ impl Command for Sources {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let _span = call.span();
+        let span = call.span();
+        let values: Vec<String> = call.req(engine_state, stack, 0)?;
 
-        let _values: Vec<String> = call.req(engine_state, stack, 0)?;
-
-        // State::from_engine_state(engine_state)
-        //     .lock()
-        //     .get_scope_mut(stack, span)
-        //     .map_err(IntoShellError::into_shell_error)?
-        //     .task
-        //     .sources
-        //     .extend(values);
+        State::from_engine_state_mut(engine_state)
+            .scope_metadata_mut(stack, span)?
+            .sources
+            .extend(values.iter().map(Into::into));
 
         Ok(PipelineData::empty())
     }
@@ -270,17 +322,13 @@ impl Command for Produces {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let _span = call.span();
+        let span = call.span();
+        let values: Vec<String> = call.req(engine_state, stack, 0)?;
 
-        let _values: Vec<String> = call.req(engine_state, stack, 0)?;
-
-        // State::from_engine_state(engine_state)
-        //     .lock()
-        //     .get_scope_mut(stack, span)
-        //     .map_err(IntoShellError::into_shell_error)?
-        //     .task
-        //     .artifacts
-        //     .extend(values);
+        State::from_engine_state_mut(engine_state)
+            .scope_metadata_mut(stack, span)?
+            .artifacts
+            .extend(values.iter().map(Into::into));
 
         Ok(PipelineData::empty())
     }

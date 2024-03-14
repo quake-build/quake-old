@@ -3,6 +3,7 @@
 use std::fmt::{self, Display};
 
 mod macros;
+pub use macros::__private;
 
 /// Logging level ordered by severity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -38,23 +39,5 @@ impl LogLevel {
 impl Display for LogLevel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.name())
-    }
-}
-
-pub mod __private {
-    use anstream::eprintln;
-    use anstyle::{AnsiColor, Color, Style};
-
-    use crate::LogLevel;
-
-    const PREFIX_STYLE: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::White)));
-    const MESSAGE_STYLE: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::White)));
-
-    pub fn print_log(level: LogLevel, title: Option<&str>, message: &str) {
-        eprintln!(
-            "{PREFIX_STYLE}> {title_style}{title}:{title_style:#} {MESSAGE_STYLE}{message}",
-            title = title.unwrap_or(level.name()),
-            title_style = Style::new().fg_color(Some(level.color())).bold()
-        );
     }
 }

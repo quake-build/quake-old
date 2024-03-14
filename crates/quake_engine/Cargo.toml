@@ -15,7 +15,7 @@ nu-engine.workspace = true
 nu-parser.workspace = true
 nu-path.workspace = true
 nu-protocol.workspace = true
-parking_lot = "0.12.1"
+parking_lot.workspace = true
 serde.workspace = true
 tokio = { version = "1.36.0", features = ["full"] }
 

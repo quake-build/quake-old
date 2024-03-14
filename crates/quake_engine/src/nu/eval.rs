@@ -1,20 +1,18 @@
-use std::sync::Arc;
-
 use nu_protocol::ast::{Argument, Block};
 use nu_protocol::engine::{EngineState, Stack};
-use nu_protocol::{print_if_stream, PipelineData, ShellError, Span, Value};
+use nu_protocol::{print_if_stream, PipelineData, Span, Value, VarId};
 
-use quake_core::errors::IntoShellError;
-use quake_core::metadata::{TaskCallId, TaskCallMetadata};
+use quake_core::metadata::TaskCallId;
+use quake_core::prelude::*;
 
-use crate::state::{Scope, State};
+use crate::state::State;
 use crate::utils::set_last_exit_code;
 
 pub fn eval_block(
     block: &Block,
     engine_state: &EngineState,
     stack: &mut Stack,
-) -> Result<bool, ShellError> {
+) -> ShellResult<bool> {
     if block.is_empty() {
         return Ok(true);
     }
@@ -73,45 +71,41 @@ pub fn eval_task_decl_body(
     call_id: TaskCallId,
     engine_state: &EngineState,
     stack: &mut Stack,
-) -> Result<bool, ShellError> {
-    let state = State::from_engine_state(engine_state);
+) -> ShellResult<bool> {
+    let mut state = State::from_engine_state_mut(engine_state);
 
     // convert task stub into task metadata
-    let (call, meta, decl_body) = {
-        let mut state = state.lock();
-
+    let (call, decl_body) = {
         let call = state.metadata.get_task_call(call_id).unwrap().clone();
+        let task = state.metadata.get_task(call.task_id).unwrap();
 
-        let meta = Arc::new(TaskCallMetadata::default());
-
-        let stub = state.metadata.get_task_stub(call.task_id).unwrap();
-        let Some(decl_body) = stub.decl_body else {
+        let Some(decl_body) = task.decl_body else {
             // no decl body: early return with no additional metadata
-            state.metadata.insert_task_call_metadata(call_id, meta);
             return Ok(true);
         };
 
-        (call, meta, decl_body)
+        (call, decl_body)
     };
 
     // push task scope (will error if nested inside another task body)
-    state
-        .lock()
-        .push_scope(Scope::new(meta), stack, call.span)
-        .map_err(IntoShellError::into_shell_error)?;
+    state.push_scope(call_id, stack, call.span)?;
+
+    // ensure no deadlocks occur since various commands may write to the state
+    drop(state);
 
     // evaluate declaration body
     let block = engine_state.get_block(decl_body);
-    let success = eval_block_with_args(block, &call.arguments, call.span, engine_state, stack)?;
+    let success = eval_body(
+        block,
+        &call.arguments,
+        &call.constants,
+        call.span,
+        engine_state,
+        stack,
+    )?;
 
-    // pop task scope and register into metadata
-    let mut state = state.lock();
-    let task = state
-        .pop_scope(stack, call.span)
-        .map_err(IntoShellError::into_shell_error)?
-        .task;
-
-    state.metadata.insert_task_call_metadata(call_id, task);
+    // pop task scope
+    State::from_engine_state_mut(engine_state).pop_scope(stack, call.span)?;
 
     Ok(success)
 }
@@ -121,14 +115,13 @@ pub fn eval_task_run_body(
     span: Span,
     engine_state: &EngineState,
     stack: &mut Stack,
-) -> Result<bool, ShellError> {
-    let state = State::from_engine_state(engine_state);
-
+) -> ShellResult<bool> {
+    // fetch metadata
     let (block_id, call) = {
-        let state = state.lock();
+        let state = State::from_engine_state(engine_state);
 
-        let call = state.metadata.get_task_call(call_id).unwrap().clone(); // cheap clone
-        let block_id = state.metadata.get_task_stub(call.task_id).unwrap().run_body;
+        let call = state.metadata.get_task_call(call_id).unwrap();
+        let block_id = state.metadata.get_task(call.task_id).unwrap().run_body;
 
         if block_id.is_none() {
             return Ok(true);
@@ -137,22 +130,31 @@ pub fn eval_task_run_body(
         (block_id.unwrap(), call)
     };
 
+    // evaluate run body (no call scope added)
     let block = engine_state.get_block(block_id);
-    let result = eval_block_with_args(block, &call.arguments, span, engine_state, stack)?;
-
-    Ok(result)
+    eval_body(
+        block,
+        &call.arguments,
+        &call.constants,
+        span,
+        engine_state,
+        stack,
+    )
 }
 
 /// Similar to [`eval_call`](nu_engine::eval_call), but with manual blocks and
 /// arguments.
-fn eval_block_with_args(
+fn eval_body(
     block: &Block,
     arguments: &[Argument],
+    constants: &[(VarId, Value)],
     span: Span,
     engine_state: &EngineState,
     stack: &mut Stack,
-) -> Result<bool, ShellError> {
+) -> ShellResult<bool> {
     let signature = &block.signature;
+
+    let mut callee_stack = stack.gather_captures(engine_state, &block.captures);
 
     let mut positional_arg_vals = Vec::with_capacity(arguments.len());
     let mut named_arg_vals = Vec::with_capacity(arguments.len());
@@ -166,8 +168,6 @@ fn eval_block_with_args(
             Argument::Unknown(_) => unimplemented!("Argument::Unknown in task call"),
         }
     }
-
-    let mut callee_stack = stack.gather_captures(engine_state, &block.captures);
 
     for (param_idx, param) in signature
         .required_positional
@@ -220,6 +220,10 @@ fn eval_block_with_args(
         };
 
         callee_stack.add_var(var_id, value);
+    }
+
+    for (var_id, value) in constants {
+        callee_stack.add_var(*var_id, value.clone());
     }
 
     eval_block(block, engine_state, &mut callee_stack)

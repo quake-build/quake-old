@@ -1,190 +1,285 @@
-use nu_parser::parse_value;
-use nu_protocol::ast::{Block, Expr, Expression, Pipeline, PipelineElement};
-use nu_protocol::engine::{Command, StateWorkingSet};
-use nu_protocol::{Category, DeclId, Spanned, SyntaxShape};
+use std::mem;
+use std::sync::Arc;
 
-use quake_core::errors::IntoParseError;
-use quake_core::metadata::{Metadata, TaskFlags, TaskStub};
+use nu_parser::{discover_captures_in_expr, parse_internal_call};
+use nu_protocol::ast::{Argument, Block, Call, Expr, Expression, PipelineElement};
+use nu_protocol::engine::StateWorkingSet;
+use nu_protocol::{span, Category, Span, Spanned, Type};
 
-use super::{commands, QUAKE_CATEGORY, QUAKE_SCOPE_VARIABLE_ID};
+use quake_core::metadata::{Metadata, Task, TaskFlags};
+use quake_core::prelude::*;
 
-macro_rules! match_expr {
-    ($expr:pat, $arg:expr) => {
-        match_expr!($expr, _, $arg)
-    };
-    ($expr:pat, $span:pat, $arg:expr) => {
-        match_expr!($expr, $span, $arg, else {
-            if cfg!(debug_assertions) {
-                panic!(concat!(
-                    "unexpected syntax while parsing quake syntax at ",
-                    file!(),
-                    ":",
-                    line!(),
-                    " (this is a bug)"
-                ))
-            } else {
-                panic!("unexpected syntax while parsing quake syntax (this is a bug)")
-            }
-        })
-    };
-    ($expr:pat, $arg:expr, else $else:block) => {
-        match_expr!($expr, _, $arg, else $else)
-    };
-    ($expr:pat, $span:pat, $arg:expr, else $else:block) => {
-        let Expression { expr: $expr, span: $span, .. } = $arg else $else;
-    };
-}
+use crate::nu::commands::DependsTask;
 
-/// Parse a given block for `def-task` invocations to transform them (and their
-/// block arguments) into their expected internal representation, and return the
-/// metadata extracted from this operation in the form of a collection of
-/// [`TaskStub`]s.
-///
-/// ## Details
-///
-/// `def-task` commands are [defined with a
-/// signature](super::commands::DefTask::signature) that, in order, takes:
-/// - The name of the task (a string)
-/// - Various flags (not positional args, so may appear anywhere)
-/// - The task's signature (initially parsed as a list of strings due to a
-///   nushell parsing quirk)
-/// - One or two blocks (either a run body, or a declaration body followed by a
-///   run body)
-///
-/// For each of these that we encounter, we apply the following transformations:
-/// - Parse any flags into [`TaskFlags`]
-/// - Parse the signature correctly now, and apply to to each block arg
-/// - Reparse any garbage variable references with the signature now applied
-pub fn parse_def_tasks(
+use super::{QUAKE_CATEGORY, QUAKE_SCOPE_VARIABLE_ID};
+
+pub fn parse_metadata(
     block: &mut Block,
-    working_set: &mut StateWorkingSet<'_>,
     metadata: &mut Metadata,
-) {
-    let def_task_decl_id = get_cmd_decl_id(&commands::DefTask, working_set);
+    working_set: &mut StateWorkingSet<'_>,
+) -> std::result::Result<(), Vec<ShellError>> {
+    let mut errors = Vec::new();
 
-    for expr in calls_in_pipelines(&mut block.pipelines, def_task_decl_id) {
-        parse_def_task(expr, working_set, metadata);
+    // register tasks in the metadata, creating new depends decls for each task
+    for call in calls_in_block(working_set, "def-task", block, false) {
+        if let Err(err) = parse_def_task(call, working_set, metadata) {
+            errors.push(err);
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
     }
 }
 
+// TODO consider error handling of things here (or at least checking #
+// positional matches)
+
+/// Reparse and register a `def-task` block as a task.
+///
+/// Returns whether or not the call was successfully
 fn parse_def_task(
-    call_expr: &mut Expression,
+    call: &mut Call,
     working_set: &mut StateWorkingSet<'_>,
     metadata: &mut Metadata,
-) {
-    let span = call_expr.span;
+) -> ShellResult<bool> {
+    // extract name--must be const eval
+    let name: Spanned<String> = call.req_const(working_set, 0)?;
 
-    match_expr!(Expr::Call(call), call_expr);
-
-    // extract flag values
+    // try to extract flags
+    //
+    // TODO allow for non const eval flags?
     let flags = TaskFlags {
-        concurrent: call.has_flag("concurrent"),
+        concurrent: call.has_flag_const(working_set, "concurrent")?,
     };
 
-    // iterate only over positional args (which excludes any flags)
-    let mut arguments = call.positional_iter_mut();
-
-    match_expr!(Expr::String(name), name_span, arguments.next().unwrap());
-
-    // extract the "signature" (actually a list<any>) to get its span
-    let sig_arg = arguments.next().unwrap();
-
-    // replace the bogus list with an empty one
-    sig_arg.expr = Expr::List(Vec::new());
-
-    // re-parse signature span into actual signature
-    working_set.enter_scope();
-    match_expr!(
-        Expr::Signature(mut signature),
-        parse_value(working_set, sig_arg.span, &SyntaxShape::Signature)
-    );
-
-    // update signature details with additional information
-    signature.name = name.to_owned();
+    // extract and update signature in place
+    let Some(Expression {
+        expr: Expr::Signature(signature),
+        ..
+    }) = call.positional_nth_mut(1)
+    else {
+        return Ok(false);
+    };
+    signature.name.clone_from(&name.item);
     signature.category = Category::Custom(QUAKE_CATEGORY.to_owned());
 
-    // reparse bodies(s) with their signature now applied
-    let mut bodies = Vec::with_capacity(2);
-    for arg in arguments.by_ref().take(2) {
-        // erase the block as we will be replacing it
-        match_expr!(Expr::Closure(block_id), arg, else { break; });
-        *working_set.get_block_mut(*block_id) = Block::new();
+    let signature = signature.clone();
 
-        // remove any errors inside before we reparse
-        working_set
-            .parse_errors
-            .retain(|err| !arg.span.contains_span(err.span()));
+    let mut closures = call.arguments.iter().filter_map(|a| {
+        if let Some(Expression {
+            expr: Expr::Closure(block_id),
+            ..
+        }) = a.expression()
+        {
+            Some(*block_id)
+        } else {
+            None
+        }
+    });
 
-        // reparse and replace the closure
-        *arg = parse_value(working_set, arg.span, &SyntaxShape::Closure(None));
-
-        // extract the expression and add the new block id
-        match_expr!(Expr::Closure(block_id), arg, else { panic!("bad closure reparse"); });
-        bodies.push(*block_id);
-
-        let block = working_set.get_block_mut(*block_id);
-
-        // add `$quake_scope` to the block's captures
-        block.captures.push(QUAKE_SCOPE_VARIABLE_ID);
-
-        // update the signature
-        block.signature = signature.clone();
-    }
-
-    working_set.exit_scope();
-
-    debug_assert!(
-        arguments.next().is_none(),
-        "extraneous args in def-task call"
-    );
-
-    // determine block IDs for metadata
-    let (run_body, decl_body) = match bodies[..] {
-        [a] => (Some(a), None),
-        [a, b] => (Some(b), Some(a)),
-        _ => unreachable!("bad def-task syntax"),
+    // extract block IDs
+    let (Some(first_block), second_block) = (closures.next(), closures.next()) else {
+        return Ok(false);
     };
 
-    // errors when task has already been defined
-    if let Err(err) = metadata.add_task_stub(
-        name.clone(),
-        TaskStub {
-            name: Spanned {
-                item: name.clone(),
-                span: *name_span,
-            },
+    // update signature for the first block
+    working_set
+        .get_block_mut(first_block)
+        .signature
+        .clone_from(&signature);
+
+    // determine which blocks correspond to which bodies
+    let (run_body, decl_body) = match second_block {
+        Some(second_block) => {
+            // update the signature for the second block
+            working_set
+                .get_block_mut(second_block)
+                .signature
+                .clone_from(&signature);
+
+            // invert the order so that the run body precedes the decl body
+            (second_block, Some(first_block))
+        }
+        None => (first_block, None),
+    };
+
+    // insert placeholder to be updated later with a `DependsTask` if successful
+    let depends_decl_name = format!("depends {name}", name = &name.item);
+    let depends_decl_id = {
+        let task_id = metadata.next_task_id();
+
+        // modify the signature to mimick that of the `Depends` command
+        let mut signature = signature;
+        signature.name.clone_from(&depends_decl_name);
+
+        let decl_id = working_set.add_decl(Box::new(DependsTask { task_id, signature }));
+        working_set
+            .last_overlay_mut()
+            .visibility
+            .hide_decl_id(&decl_id);
+        decl_id
+    };
+
+    if let Some(decl_body) = decl_body {
+        let mut block = mem::take(working_set.get_block_mut(decl_body));
+
+        // add the task call scope ID variable to the block's captures
+        block.captures.push(QUAKE_SCOPE_VARIABLE_ID);
+
+        // transform `Depends` calls to `DependsTask`
+        for call in calls_in_block(working_set, "depends", &mut block, true) {
+            transform_depends(call, working_set, metadata)?;
+        }
+
+        *working_set.get_block_mut(decl_body) = block;
+    }
+
+    // note: errors when task has already been defined
+    if let Err(err) = metadata.register_task(
+        name.item.clone(),
+        Arc::new(Task {
+            name,
             flags,
-            signature,
-            span,
+            depends_decl_id: Some(depends_decl_id),
             decl_body,
-            run_body,
-        },
+            run_body: Some(run_body),
+        }),
     ) {
         working_set.error(err.into_parse_error());
+
+        // clean up to prevent future collisions
+        working_set
+            .last_overlay_mut()
+            .decls
+            .remove(depends_decl_name.as_bytes());
     }
+
+    Ok(true)
 }
 
-/// Get the name and [`DeclId`] for a given [`Command`].
-fn get_cmd_decl_id(command: &impl Command, working_set: &StateWorkingSet<'_>) -> DeclId {
-    let name = command.name();
-    working_set
-        .find_decl(name.as_bytes())
-        .unwrap_or_else(|| panic!("command {name} not defined"))
+fn transform_depends(
+    call: &mut Box<Call>,
+    working_set: &mut StateWorkingSet<'_>,
+    metadata: &mut Metadata,
+) -> ShellResult<()> {
+    // update the decl id to the corresponding `DependsTask` command
+    // extract dep name--must be const eval
+    let dep_id: Spanned<String> = call.req_const(working_set, 0)?;
+
+    // remove the name span
+    let name_span = call.arguments.remove(0).span();
+
+    // find the decl ID to the corresponding `DependsTask` command
+    let depends_decl_id = metadata
+        .find_task(&dep_id.item, Some(dep_id.span))
+        .into_shell_result()?
+        .depends_decl_id
+        .ok_or(errors::TaskCannotDepend {
+            name: dep_id.item,
+            span: name_span,
+        })
+        .into_diagnostic()
+        .into_shell_result()?;
+
+    *call = {
+        working_set.enter_scope();
+
+        // figure out which captures (if any) are used inside
+        let (mut seen, mut seen_blocks, mut output) = Default::default();
+        // ignore errors, as this will have already been called during the initial parse
+        drop(discover_captures_in_expr(
+            working_set,
+            &Expression {
+                expr: Expr::Call(call.clone()),
+                span: call.span(),
+                ty: Type::Nothing,
+                custom_completion: None,
+            },
+            &mut seen,
+            &mut seen_blocks,
+            &mut output,
+        ));
+
+        // add all found captures to the current overlay
+        for (var_id, var_span) in output {
+            // TODO find a more foolproof way to determine var name
+            let var_name = working_set.get_span_contents(var_span).to_owned();
+            working_set
+                .last_overlay_mut()
+                .insert_variable(var_name, var_id);
+        }
+
+        // reparse the call with captures now in scope
+        let arg_spans = call
+            .arguments
+            .iter()
+            .map(Argument::span)
+            .collect::<Vec<_>>();
+        let call = parse_internal_call(
+            working_set,
+            span(&[call.head, name_span]),
+            &arg_spans,
+            depends_decl_id,
+        )
+        .call;
+
+        working_set.exit_scope();
+
+        call
+    };
+
+    Ok(())
 }
 
-/// Get calls of a particular [`DeclId`] inside a given [`Pipeline`]s' elements.
-fn calls_in_pipelines(
-    pipelines: &mut [Pipeline],
-    decl_id: DeclId,
-) -> impl Iterator<Item = &mut Expression> {
-    pipelines
+/// Get all valid calls of a particular declaration inside a given block.
+///
+/// ## Panics
+///
+/// If there is no corresponding decl in the working set for the given command.
+fn calls_in_block<'a>(
+    working_set: &StateWorkingSet<'_>,
+    decl_name: &str,
+    block: &'a mut Block,
+    skip_errors: bool,
+) -> impl Iterator<Item = &'a mut Box<Call>> {
+    let decl_id = working_set
+        .find_decl(decl_name.as_bytes())
+        .unwrap_or_else(|| panic_bug!("command {decl_name} not defined"));
+
+    let error_spans: Vec<Span> = if skip_errors {
+        let block_span = block.span.unwrap();
+        working_set
+            .parse_errors
+            .iter()
+            .map(ParseError::span)
+            .filter(|s| block_span.contains_span(*s))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    // FIXME: this only catches top-level calls. need to refactor to recurse
+    // through the entire AST
+    block
+        .pipelines
         .iter_mut()
         .flat_map(|p| p.elements.iter_mut())
         .filter_map(move |pe| {
-            if let PipelineElement::Expression(_, expr) = pe
-                && matches!(&expr.expr, Expr::Call(call) if call.decl_id == decl_id)
+            if let PipelineElement::Expression(
+                _,
+                Expression {
+                    expr: Expr::Call(call),
+                    span: call_span,
+                    ..
+                },
+            ) = pe
+                && call.decl_id == decl_id
+                && !(skip_errors && error_spans.iter().any(|s| call_span.contains_span(*s)))
             {
-                Some(expr)
+                Some(call)
             } else {
                 None
             }
