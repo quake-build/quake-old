@@ -3,6 +3,8 @@ use nu_protocol::Span;
 
 pub use nu_protocol::{ParseError, ShellError};
 
+use crate::errors::QuakeDiagnostic;
+
 pub type ParseResult<T> = Result<T, ParseError>;
 pub type ShellResult<T> = Result<T, ShellError>;
 
@@ -21,7 +23,15 @@ pub trait IntoParseError {
     fn into_parse_error(self) -> ParseError;
 }
 
+impl<E: QuakeDiagnostic> IntoParseError for E {
+    #[inline(always)]
+    fn into_parse_error(self) -> ParseError {
+        diagnostic_to_parse_error(&self)
+    }
+}
+
 impl IntoParseError for ErrReport {
+    #[inline(always)]
     fn into_parse_error(self) -> ParseError {
         diagnostic_to_parse_error(&*self)
     }
@@ -65,13 +75,20 @@ pub trait IntoShellError {
     fn into_shell_error(self) -> ShellError;
 }
 
+impl<E: QuakeDiagnostic> IntoShellError for E {
+    #[inline(always)]
+    fn into_shell_error(self) -> ShellError {
+        diagnostic_to_shell_error(&self)
+    }
+}
+
 impl IntoShellError for ErrReport {
+    #[inline(always)]
     fn into_shell_error(self) -> ShellError {
         diagnostic_to_shell_error(&*self)
     }
 }
 
-#[inline(always)]
 fn diagnostic_to_shell_error(diag: &dyn Diagnostic) -> ShellError {
     let label = diag.labels().and_then(|mut ls| ls.next());
     ShellError::GenericError {

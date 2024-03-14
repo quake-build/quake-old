@@ -6,9 +6,12 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-miette = "7.1.0"
+miette = "7.2.0"
 nu-protocol.workspace = true
-thiserror = "1.0.56"
+thiserror = "1.0.58"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+anstream = { version = "0.6.13", features = ["test"] }
