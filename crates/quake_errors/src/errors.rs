@@ -72,6 +72,16 @@ make_errors! {
         pub span: Span,
     }
 
+    #[error("Declarative task has extra body")]
+    #[diagnostic(
+        code(quake::task::cannot_depend),
+        help("Remove the `--decl` flag or remove the extra block")
+    )]
+    pub struct DeclTaskHasExtraBody {
+        #[label("extra block")]
+        pub span: Span,
+    }
+
     #[error("Unknown scope")]
     #[diagnostic(
         code(quake::task::unknown_scope),

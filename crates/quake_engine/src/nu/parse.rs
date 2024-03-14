@@ -18,24 +18,45 @@ pub fn parse_metadata(
     metadata: &mut Metadata,
     working_set: &mut StateWorkingSet<'_>,
 ) -> std::result::Result<(), Vec<ShellError>> {
-    let mut errors = Vec::new();
+    let mut lazy_errors = Vec::new();
 
     // register tasks in the metadata, creating new depends decls for each task
     for call in calls_in_block(working_set, "def-task", block, false) {
-        if let Err(err) = parse_def_task(call, working_set, metadata) {
-            errors.push(err);
+        match parse_def_task(call, working_set, metadata) {
+            Ok(LazyResult::Failure { errors }) => lazy_errors.extend(errors),
+            Err(err) => lazy_errors.push(err),
+            _ => {}
         }
     }
 
-    if errors.is_empty() {
+    if lazy_errors.is_empty() {
         Ok(())
     } else {
-        Err(errors)
+        Err(lazy_errors)
     }
 }
 
-// TODO consider error handling of things here (or at least checking #
-// positional matches)
+// TODO impl try? with fast failure and lazy failure
+
+#[derive(Debug, Clone)]
+enum LazyResult {
+    Success,
+    Failure { errors: Vec<ShellError> },
+}
+
+impl LazyResult {
+    pub const fn success() -> Self {
+        Self::Success
+    }
+
+    pub const fn failure(errors: Vec<ShellError>) -> Self {
+        Self::Failure { errors }
+    }
+
+    pub const fn is_success(&self) -> bool {
+        matches!(self, Self::Success)
+    }
+}
 
 /// Reparse and register a `def-task` block as a task.
 ///
@@ -44,16 +65,19 @@ fn parse_def_task(
     call: &mut Call,
     working_set: &mut StateWorkingSet<'_>,
     metadata: &mut Metadata,
-) -> ShellResult<bool> {
+) -> ShellResult<LazyResult> {
+    // errors to emit at the end if it is not a critical failure
+    let mut late_errors = vec![];
+
     // extract name--must be const eval
     let name: Spanned<String> = call.req_const(working_set, 0)?;
 
     // try to extract flags
-    //
-    // TODO allow for non const eval flags?
     let flags = TaskFlags {
         concurrent: call.has_flag_const(working_set, "concurrent")?,
     };
+
+    let is_declarative = call.has_flag_const(working_set, "decl")?;
 
     // extract and update signature in place
     let Some(Expression {
@@ -61,7 +85,7 @@ fn parse_def_task(
         ..
     }) = call.positional_nth_mut(1)
     else {
-        return Ok(false);
+        return Ok(LazyResult::failure(late_errors));
     };
     signature.name.clone_from(&name.item);
     signature.category = Category::Custom(QUAKE_CATEGORY.to_owned());
@@ -82,7 +106,7 @@ fn parse_def_task(
 
     // extract block IDs
     let (Some(first_block), second_block) = (closures.next(), closures.next()) else {
-        return Ok(false);
+        return Ok(LazyResult::failure(late_errors));
     };
 
     // update signature for the first block
@@ -94,18 +118,33 @@ fn parse_def_task(
     // determine which blocks correspond to which bodies
     let (run_body, decl_body) = match second_block {
         Some(second_block) => {
-            // update the signature for the second block
-            working_set
-                .get_block_mut(second_block)
-                .signature
-                .clone_from(&signature);
+            if is_declarative {
+                // too many blocks: add error and continue
+                late_errors.push(
+                    errors::DeclTaskHasExtraBody {
+                        span: working_set.get_block(second_block).span.unwrap(),
+                    }
+                    .into_shell_error(),
+                );
 
-            // invert the order so that the run body precedes the decl body
-            (second_block, Some(first_block))
+                (Some(first_block), None)
+            } else {
+                // update the signature for the second block
+                working_set
+                    .get_block_mut(second_block)
+                    .signature
+                    .clone_from(&signature);
+                (Some(second_block), Some(first_block))
+            }
         }
-        None => (first_block, None),
+        None => {
+            if is_declarative {
+                (None, Some(first_block))
+            } else {
+                (Some(first_block), None)
+            }
+        }
     };
-
     // insert placeholder to be updated later with a `DependsTask` if successful
     let depends_decl_name = format!("depends {name}", name = &name.item);
     let depends_decl_id = {
@@ -123,7 +162,6 @@ fn parse_def_task(
         decl_id
     };
 
-    // do we have a decl body? (i.e. the first of two blocks)
     if let Some(decl_body) = decl_body {
         let mut block = mem::take(working_set.get_block_mut(decl_body));
 
@@ -136,12 +174,15 @@ fn parse_def_task(
         }
 
         *working_set.get_block_mut(decl_body) = block;
-    } else {
-        // remove the error indicating a missing argument
+    }
+
+    // remove errors indicating a missing argument when only one block is provided
+    if run_body.is_some() != decl_body.is_some() {
         let call_span = call.span();
-        working_set
-            .parse_errors
-            .retain(|e| !matches!(e, ParseError::MissingPositional(_, span, _) if call_span.contains_span(*span)));
+        working_set.parse_errors.retain(|e| {
+            !matches!(e, ParseError::MissingPositional(name, span, _)
+                                  if name == "second_body" && call_span.contains_span(*span))
+        });
     }
 
     // note: errors when task has already been defined
@@ -152,7 +193,7 @@ fn parse_def_task(
             flags,
             depends_decl_id: Some(depends_decl_id),
             decl_body,
-            run_body: Some(run_body),
+            run_body,
         }),
     ) {
         working_set.error(err.into_parse_error());
@@ -164,7 +205,11 @@ fn parse_def_task(
             .remove(depends_decl_name.as_bytes());
     }
 
-    Ok(true)
+    if late_errors.is_empty() {
+        Ok(LazyResult::success())
+    } else {
+        Ok(LazyResult::failure(late_errors))
+    }
 }
 
 fn transform_depends(
@@ -194,9 +239,10 @@ fn transform_depends(
     *call = {
         working_set.enter_scope();
 
-        // figure out which captures (if any) are used inside
-        let (mut seen, mut seen_blocks, mut output) = Default::default();
+        // figure out which captures (if any) are used inside the call
+        //
         // ignore errors, as this will have already been called during the initial parse
+        let (mut seen, mut seen_blocks, mut output) = Default::default();
         drop(discover_captures_in_expr(
             working_set,
             &Expression {

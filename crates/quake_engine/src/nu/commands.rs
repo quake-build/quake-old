@@ -34,9 +34,14 @@ impl Command for DefTask {
                 "allow this task to be run concurrently with others",
                 Some('c'),
             )
+            .switch(
+                "decl",
+                "make this a declarative task (with a single decl body and no run body)",
+                Some('d'),
+            )
             .required("params", SyntaxShape::Signature, "parameters")
-            .required("decl_body", SyntaxShape::Closure(None), "declaration body")
-            .required("run_body", SyntaxShape::Closure(None), "run body")
+            .required("first_body", SyntaxShape::Closure(None), "first body")
+            .required("second_body", SyntaxShape::Closure(None), "second body")
             .creates_scope()
             .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
