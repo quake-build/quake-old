@@ -200,7 +200,8 @@ fn eval_body(
             .iter()
             .find(|(long, short, _)| {
                 named.long == long.item
-                    || named.short == short.as_ref().and_then(|s| s.item.chars().next())
+                    || (named.short.is_some()
+                        && named.short == short.as_ref().and_then(|s| s.item.chars().next()))
             })
             .map(|(_, _, expr)| expr)
         {
