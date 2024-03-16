@@ -92,10 +92,7 @@ impl Command for Subtask {
     ) -> Result<PipelineData, ShellError> {
         let span = call.span();
 
-        let mut state = State::from_engine_state_mut(engine_state);
-        state.check_in_scope(stack, span)?;
-
-        let (name, closure) = (
+        let (mut name, closure) = (
             call.req::<Spanned<String>>(engine_state, stack, 0)?,
             call.req::<Closure>(engine_state, stack, 1)?,
         );
@@ -103,10 +100,21 @@ impl Command for Subtask {
             concurrent: call.has_flag(engine_state, stack, "concurrent")?,
         };
 
+        let mut state = State::from_engine_state_mut(engine_state);
+
+        let parent = {
+            let call_id = state.peek_scope(stack, span)?;
+            let task_id = state.metadata.get_task_call(call_id).unwrap().task_id;
+            state.metadata.get_task(task_id).unwrap().clone()
+        };
+        name.item = format!(
+            "{parent_name}/{name}",
+            parent_name = &parent.name.item,
+            name = name.item
+        );
+
         let block = engine_state.get_block(closure.block_id);
-
         let mut constants = Vec::with_capacity(1);
-
         if let Some(arg) = block.signature.required_positional.first() {
             let expected_ty = arg.shape.to_type();
             if let PipelineData::Value(value, _) = input {

@@ -115,6 +115,15 @@ impl State {
         stack.add_var(QUAKE_SCOPE_VARIABLE_ID, Value::int(-1, Span::unknown()));
         Ok(())
     }
+
+    pub fn peek_scope(&self, stack: &Stack, span: Span) -> ShellResult<TaskCallId> {
+        let scope_id = get_scope_id(stack, span)?;
+        Ok(self
+            .scopes
+            .get(&scope_id)
+            .expect("scope ID does not exist")
+            .0)
+    }
 }
 
 impl Serialize for State {

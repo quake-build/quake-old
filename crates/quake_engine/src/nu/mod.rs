@@ -70,6 +70,11 @@ pub fn create_engine_state(state: Arc<RwLock<State>>) -> crate::Result<EngineSta
         }
 
         bind_command! {
+            nu_cli::NuHighlight,
+            nu_cli::Print,
+        };
+
+        bind_command! {
             DefTask,
             Subtask,
             Depends,
