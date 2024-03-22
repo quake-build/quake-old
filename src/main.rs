@@ -1,119 +1,84 @@
+#![feature(iter_intersperse)]
+
+use std::env;
 use std::path::PathBuf;
 
 use clap::builder::PathBufValueParser;
+use clap::ArgMatches;
+use serde_json::to_string as to_json;
 
 use quake_core::prelude::*;
 use quake_core::utils::get_init_cwd;
 use quake_engine::{Engine, EngineOptions};
 
+fn parse_args() -> ArgMatches {
+    use clap::*;
+    Command::new("quake")
+        .about("quake: a meta-build system powered by nushell")
+        .version(crate_version!())
+        .color(ColorChoice::Never)
+        .max_term_width(100)
+        .override_usage(
+            "quake [OPTIONS] <TASK> [--] [TASK_ARGS]\n       \
+             quake [OPTIONS]",
+        )
+        .arg_required_else_help(true)
+        .disable_help_subcommand(true)
+        .args_conflicts_with_subcommands(true)
+        .subcommand_negates_reqs(true)
+        .subcommand_help_heading("Subcommands")
+        .subcommands([
+            Command::new("list").about("List the available tasks"),
+            Command::new("inspect").about("Dump build script metadata as JSON"),
+        ])
+        .next_help_heading("Environment")
+        .args([Arg::new("project")
+            .long("project")
+            .value_name("PROJECT_DIR")
+            .value_parser(PathBufValueParser::new())
+            .value_hint(ValueHint::DirPath)
+            .help("Path to the project root directory")
+            .global(true)])
+        .next_help_heading("Output handling")
+        .args([
+            Arg::new("quiet")
+                .long("quiet")
+                .action(ArgAction::SetTrue)
+                .help("Suppress the output (stdout and stderr) of any executed commands"),
+            Arg::new("json")
+                .long("json")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "Output events as a line-delimited JSON objects to stderr. See the JSON \
+                    appendix in the manual for the specification of these objects.",
+                )
+                .global(true),
+        ])
+        .next_help_heading("Evaluation modes")
+        .args([
+            Arg::new("force")
+                .long("force")
+                .action(ArgAction::SetTrue)
+                .help("Execute tasks regardless of initial dirtiness checks"),
+            Arg::new("watch")
+                .long("watch")
+                .action(ArgAction::SetTrue)
+                .help("Run the task, and re-run whenever sources have changed"),
+        ])
+        .args([
+            Arg::new("task").value_name("TASK").hide(true),
+            Arg::new("task-args")
+                .value_name("TASK_ARGS")
+                .trailing_var_arg(true)
+                .allow_hyphen_values(true)
+                .num_args(0..)
+                .hide(true),
+        ])
+        .get_matches()
+}
+
 fn main() -> Result<()> {
-    let online_docs_url = option_env!("QUAKE_ONLINE_DOCS").unwrap_or("https://docs.quake.build/");
-    let _offline_docs_url = option_env!("QUAKE_OFFLINE_DOCS");
-
-    let matches = {
-        use clap::*;
-
-        Command::new("quake")
-            .about("quake: a meta-build system built on nushell")
-            .version(crate_version!())
-            .color(ColorChoice::Never)
-            .max_term_width(100)
-            .override_usage(
-                "quake [OPTIONS] <TASK> [ARGS]\n       \
-                 quake [OPTIONS] <SUBCOMMAND>",
-            )
-            .arg_required_else_help(true)
-            .disable_help_subcommand(true)
-            .args_conflicts_with_subcommands(true)
-            .subcommand_negates_reqs(true)
-            .arg(
-                Arg::new("task")
-                    .value_name("TASK")
-                    .required_unless_present("dry-run")
-                    .hide(true),
-            )
-            .subcommand_help_heading("Subcommands")
-            .subcommands([
-                Command::new("list").about("List the available tasks"),
-                Command::new("docs")
-                    .about("Open the quake documentation in a web browser")
-                    .arg(
-                        Arg::new("query")
-                            .short('s')
-                            .long("search")
-                            .value_name("QUERY")
-                            .help("Search the manual upon opening"),
-                    )
-                    .arg(
-                        Arg::new("online")
-                            .short('O')
-                            .long("online")
-                            .action(ArgAction::SetTrue)
-                            .help(format!(
-                                "Open the latest documentation online on {online_docs_url}, which \
-                                 may or may not be current with this version of quake."
-                            )),
-                    ),
-                Command::new("inspect").about("Dump build script metadata as JSON"),
-            ])
-            .next_help_heading("Environment")
-            .args([Arg::new("project")
-                .short('p')
-                .long("project")
-                .value_name("PROJECT_DIR")
-                .value_parser(PathBufValueParser::new())
-                .value_hint(ValueHint::DirPath)
-                .help("Path to the project root directory")
-                .global(true)])
-            .next_help_heading("Output handling")
-            .args([
-                Arg::new("quiet")
-                    .short('q')
-                    .long("quiet")
-                    .action(ArgAction::SetTrue)
-                    .help("Suppress the output (stdout and stderr) of any executed commands"),
-                Arg::new("stdout")
-                    .long("stdout")
-                    .value_name("FILE")
-                    .help("Redirect stdout of executed commands to a file"),
-                Arg::new("stderr")
-                    .long("stderr")
-                    .value_name("FILE")
-                    .help("Redirect stderr of executed commands to a file"),
-            ])
-            .arg(
-                Arg::new("json")
-                    .long("json")
-                    .action(ArgAction::SetTrue)
-                    .help(
-                        "Output results as a JSON object to stdout, suppressing the output of any \
-                         executed commands. See the JSON appendix in the manual for the \
-                         specification of these objects.",
-                    )
-                    .global(true),
-            )
-            .next_help_heading("Special modes")
-            .args([
-                Arg::new("dry-run")
-                    .short('D')
-                    .long("dry-run")
-                    .action(ArgAction::SetTrue)
-                    .group("operation")
-                    .help("Do not execute any tasks (useful for validating build script)"),
-                Arg::new("force")
-                    .short('F')
-                    .long("force")
-                    .action(ArgAction::SetTrue)
-                    .help("Execute tasks regardless of initial dirtiness checks"),
-                Arg::new("watch")
-                    .short('W')
-                    .long("watch")
-                    .action(ArgAction::SetTrue)
-                    .help("Retrigger tasks when sources have changed"),
-            ])
-            .arg(Arg::new("task-args"))
-            .get_matches()
-    };
+    let matches = parse_args();
 
     let project = {
         if let Some(project_root) = matches.get_one::<PathBuf>("project") {
@@ -128,25 +93,38 @@ fn main() -> Result<()> {
         }
     };
 
-    let options = {
-        let quiet = matches.get_flag("quiet");
-        EngineOptions { quiet }
+    let json = matches.get_flag("json");
+
+    let options = EngineOptions {
+        quiet: matches.get_flag("quiet"),
+        json,
+        force: matches.get_flag("force"),
+        watch: matches.get_flag("watch"),
     };
 
     let mut engine = Engine::load(project, options)?;
 
     match matches.subcommand() {
         None => {
-            if !matches.get_flag("dry-run") {
-                let task = matches.get_one::<String>("task").unwrap().clone();
-                engine.run(&task, vec![])?;
-            }
+            let task = matches.get_one::<String>("task").unwrap();
+            let args: String = matches
+                .get_many::<String>("task-args")
+                .map(|args| {
+                    args.filter(|s| *s != "--")
+                        .cloned()
+                        .intersperse(String::from(" "))
+                        .collect()
+                })
+                .unwrap_or_default();
+            engine.run(task, &args)?;
         }
         Some(("list", _)) => {
             let metadata = engine.metadata();
             let tasks: Vec<_> = metadata.task().map(|t| &t.name.item).collect();
 
-            if tasks.is_empty() {
+            if json {
+                println!("{}", to_json(&tasks).into_diagnostic()?);
+            } else if tasks.is_empty() {
                 println!("No available tasks.");
             } else {
                 println!("Available tasks:");
@@ -156,10 +134,11 @@ fn main() -> Result<()> {
             }
         }
         Some(("inspect", _)) => {
-            let metadata = engine.metadata().clone();
-            println!("{}", serde_json::to_string(&metadata).into_diagnostic()?);
+            println!("{}", to_json(&engine.metadata().clone()).into_diagnostic()?);
         }
-        Some(_) => unimplemented!(),
+        Some((name, _)) => {
+            unimplemented!("subcommand {name}")
+        }
     }
 
     Ok(())

@@ -35,6 +35,9 @@ mod utils;
 #[derive(Debug, Clone)]
 pub struct EngineOptions {
     pub quiet: bool,
+    pub json: bool,
+    pub force: bool,
+    pub watch: bool,
 }
 
 pub struct Engine {
@@ -157,9 +160,12 @@ impl Engine {
         RwLockReadGuard::map(self.state.read(), |s| &s.metadata)
     }
 
-    pub fn run(&mut self, task_name: &str, arguments: impl Into<Vec<Argument>>) -> Result<()> {
-        let arguments = arguments.into();
+    pub fn run(&mut self, task_name: &str, arguments: &str) -> Result<()> {
+        if !arguments.is_empty() {
+            log_warning!("argument passing from the command line is currently unsupported");
+        }
 
+        let arguments = vec![]; // TODO parse arguments instead
         let call_id = self.populate_metadata_for_call(task_name, arguments)?;
 
         let build_tree = generate_run_tree(call_id, &self.metadata());
