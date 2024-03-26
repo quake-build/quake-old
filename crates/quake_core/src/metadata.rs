@@ -61,11 +61,17 @@ impl Metadata {
             })
     }
 
-    pub fn register_task(&mut self, name: String, task: impl Into<Arc<Task>>) -> Result<TaskId> {
+    pub fn register_task(
+        &mut self,
+        name: String,
+        task: impl Into<Arc<Task>>,
+        span: Span,
+    ) -> Result<TaskId> {
         if let Ok(existing) = self.find_task(&name, None) {
             return Err(errors::TaskDuplicateDefinition {
                 name,
                 existing_span: existing.name.span,
+                span,
             }
             .into());
         }

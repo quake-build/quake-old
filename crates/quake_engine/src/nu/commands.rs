@@ -152,6 +152,7 @@ impl Command for Subtask {
                     decl_body: None,
                     run_body: Some(closure.block_id),
                 }),
+                name.span,
             )
             .into_shell_result()?;
 

@@ -3,7 +3,7 @@ use nu_protocol::Span;
 
 pub use nu_protocol::{ParseError, ShellError};
 
-use crate::errors::QuakeDiagnostic;
+use crate::QuakeDiagnostic;
 
 pub type ParseResult<T> = Result<T, ParseError>;
 pub type ShellResult<T> = Result<T, ShellError>;

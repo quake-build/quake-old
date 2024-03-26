@@ -159,7 +159,7 @@ fn get_scope_id(stack: &Stack, span: Span) -> ShellResult<ScopeId> {
         }
     }
 
-    Err(errors::UnknownScope { span })
+    Err(errors::InvalidScope { span })
         .into_diagnostic()
         .into_shell_result()
 }

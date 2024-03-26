@@ -1,17 +1,13 @@
-use miette::Diagnostic;
 use nu_protocol::Span;
-use thiserror::Error;
 
 pub const QUAKE_OTHER_ERROR_CODE: &str = "quake::other";
 
-pub(crate) trait QuakeDiagnostic: Diagnostic {}
-
 macro_rules! make_error {
     ($name:ident, $item:item) => {
-        #[derive(Debug, Clone, Error, Diagnostic)]
+        #[derive(Debug, Clone, ::thiserror::Error, ::miette::Diagnostic)]
         $item
 
-        impl QuakeDiagnostic for $name {}
+        impl $crate::QuakeDiagnostic for $name {}
     }
 }
 
@@ -42,14 +38,14 @@ make_errors! {
 
     #[error("Build script not found")]
     #[diagnostic(
-        code(quake::missing_build_script),
+        code(quake::build_script_not_found),
         help("Add a `build.quake` file to the project root")
     )]
     pub struct BuildScriptNotFound;
 
     // TODO add "did you mean?" or list available tasks
     #[error("Task not found: {name}")]
-    #[diagnostic(code(quake::task::not_found))]
+    #[diagnostic(code(quake::task_not_found))]
     pub struct TaskNotFound {
         pub name: String,
         #[label("task referenced here")]
@@ -57,24 +53,18 @@ make_errors! {
     }
 
     #[error("Task already defined: {name}")]
-    #[diagnostic(code(quake::task::duplicate_definition))]
+    #[diagnostic(code(quake::duplicate_task_definition))]
     pub struct TaskDuplicateDefinition {
         pub name: String,
         #[label("first defined here")]
         pub existing_span: Span,
-    }
-
-    #[error("Task cannot be depended upon")]
-    #[diagnostic(code(quake::task::cannot_depend))]
-    pub struct TaskCannotDepend {
-        pub name: String,
-        #[label("task referenced here")]
+        #[label("defined again here")]
         pub span: Span,
     }
 
     #[error("Declarative task has extra body")]
     #[diagnostic(
-        code(quake::task::cannot_depend),
+        code(quake::decl_task_has_extra_body),
         help("Remove the `--decl` flag or remove the extra block")
     )]
     pub struct DeclTaskHasExtraBody {
@@ -82,19 +72,19 @@ make_errors! {
         pub span: Span,
     }
 
-    #[error("Unknown scope")]
+    #[error("Invalid scope for command")]
     #[diagnostic(
-        code(quake::task::unknown_scope),
+        code(quake::invalid_scope),
         help("Did you mean to evaluate this command inside of a special scope block? (e.g. def-task)")
     )]
-    pub struct UnknownScope {
+    pub struct InvalidScope {
         #[label("command used here")]
         pub span: Span,
     }
 
     #[error("Attempt to define nested task scopes")]
     #[diagnostic(
-        code(quake::scope::no_nested_scopes),
+        code(quake::nested_scope),
         help("Define this task in the outer scope instead, or use `subtask`")
     )]
     pub struct NestedScopes {
@@ -106,8 +96,6 @@ make_errors! {
 #[cfg(test)]
 mod tests {
     use anstream::adapter::strip_str;
-
-    use super::*;
 
     #[test]
     fn test_make_errors_macro() {

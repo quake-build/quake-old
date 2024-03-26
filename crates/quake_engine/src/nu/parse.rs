@@ -189,6 +189,7 @@ fn parse_def_task(
     }
 
     // note: errors when task has already been defined
+    let name_span = name.span;
     if let Err(err) = metadata.register_task(
         name.item.clone(),
         Arc::new(Task {
@@ -198,6 +199,7 @@ fn parse_def_task(
             decl_body,
             run_body,
         }),
+        name_span,
     ) {
         working_set.error(err.into_parse_error());
 
@@ -232,9 +234,9 @@ fn transform_depends(
         .find_task(&dep_id.item, Some(dep_id.span))
         .into_shell_result()?
         .depends_decl_id
-        .ok_or(errors::TaskCannotDepend {
+        .ok_or(errors::TaskNotFound {
             name: dep_id.item,
-            span: name_span,
+            span: Some(name_span),
         })
         .into_diagnostic()
         .into_shell_result()?;
