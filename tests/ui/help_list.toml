@@ -1,0 +1,18 @@
+args = ["list", "--help"]
+status.code = 0
+stdout = """
+List the available tasks
+
+Usage: quake list [OPTIONS]
+
+Options:
+  -h, --help  Print help
+
+Environment:
+      --project <PROJECT_DIR>  Path to the project root directory
+
+Output handling:
+      --json  Output events as a line-delimited JSON objects to stderr. See the JSON appendix in the
+              manual for the specification of these objects.
+"""
+stderr = ""

@@ -1,0 +1,29 @@
+args = ["--help"]
+status.code = 0
+stdout = """
+quake: a meta-build system powered by nushell
+
+Usage: quake [OPTIONS] <TASK> [--] [TASK_ARGS]
+       quake [OPTIONS]
+
+Subcommands:
+  list     List the available tasks
+  inspect  Dump build script metadata as JSON
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+Environment:
+      --project <PROJECT_DIR>  Path to the project root directory
+
+Output handling:
+      --quiet  Suppress the output (stdout and stderr) of any executed commands
+      --json   Output events as a line-delimited JSON objects to stderr. See the JSON appendix in
+               the manual for the specification of these objects.
+
+Evaluation modes:
+      --force  Execute tasks regardless of initial dirtiness checks
+      --watch  Run the task, and re-run whenever sources have changed
+"""
+stderr = ""
