@@ -65,7 +65,7 @@ pub mod __private {
     #[inline(always)]
     pub fn print_log(level: LogLevel, title: Option<&str>, message: &str) {
         eprintln!(
-            "{PREFIX_STYLE}> {title_style}{title}:{title_style:#} {MESSAGE_STYLE}{message}",
+            "{PREFIX_STYLE}> {title_style}{title}{title_style:#}: {MESSAGE_STYLE}{message}",
             title = title.unwrap_or_else(|| level.name()),
             title_style = Style::new().fg_color(Some(level.color())).bold()
         );

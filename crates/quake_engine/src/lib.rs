@@ -1,16 +1,13 @@
 #![feature(let_chains)]
-#![feature(try_trait_v2)]
-#![feature(result_flattening)]
 #![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::fs;
-use std::process::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use nu_parser::parse;
-use nu_protocol::ast::Argument;
+use nu_protocol::ast::{Argument, Block};
 use nu_protocol::engine::{EngineState, Stack, StateWorkingSet};
 use nu_protocol::{report_error, report_error_new, Span};
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
@@ -46,18 +43,18 @@ pub struct Engine {
     state: Arc<RwLock<State>>,
     engine_state: EngineState,
     stack: Stack,
-    task_pool: JoinSet<Result<(TaskCallId, bool)>>,
+    task_pool: JoinSet<Result<(TaskCallId, bool), EngineError>>,
     handles: Mutex<HashMap<TaskCallId, (AbortHandle, Arc<AtomicBool>)>>,
 }
 
 impl Engine {
-    pub fn load(project: Project, options: EngineOptions) -> Result<Self> {
+    pub fn load(project: Project, options: EngineOptions) -> EngineResult<Self> {
         #[cfg(windows)]
         nu_ansi_term::enable_ansi_support().expect("Failed to initialize ANSI support");
 
         let state = Arc::new(RwLock::new(State::new()));
 
-        let engine_state = create_engine_state(state.clone())?;
+        let engine_state = create_engine_state(state.clone());
         let stack = create_stack(project.project_root());
 
         let mut engine = Self {
@@ -70,16 +67,47 @@ impl Engine {
             handles: Mutex::new(HashMap::new()),
         };
 
-        if !engine.load_script()? {
-            log_fatal!("failed to load build script");
-            exit(exit_codes::LOAD_FAIL);
-        }
+        engine.load_script()?;
 
         Ok(engine)
     }
 
+    fn report_errors(&self, working_set: &StateWorkingSet<'_>) -> bool {
+        let mut state = self.state.write();
+
+        if state.errors.is_empty() && working_set.parse_errors.is_empty() {
+            return false;
+        }
+
+        // report parse errors in working set, but do not discard as the working state
+        // is intended to represent such invalid states
+        for error in &working_set.parse_errors {
+            report_error(working_set, error);
+        }
+
+        // report errors emitted by quake, removing them so that the engine may continue
+        // to function if recovery is desirable
+        for error in state.errors.drain(..) {
+            report_error(working_set, &*error);
+        }
+
+        true
+    }
+
+    fn report_errors_new(&self) -> bool {
+        self.report_errors(&StateWorkingSet::new(&self.engine_state))
+    }
+
+    fn report_shell_error(&self, error: &ShellError) {
+        if error.is_quake_internal() {
+            self.report_errors_new();
+        } else {
+            report_error_new(&self.engine_state, error);
+        }
+    }
+
     /// Load and evaluate the project's build script.
-    fn load_script(&mut self) -> Result<bool> {
+    fn load_script(&mut self) -> EngineResult<()> {
         let build_script = self.project.build_script();
         let filename = build_script
             .strip_prefix(self.project.project_root())
@@ -87,20 +115,25 @@ impl Engine {
             .to_string_lossy()
             .into_owned();
 
-        let source = fs::read_to_string(build_script)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to read build script `{filename}`"))?;
+        let source = fs::read_to_string(build_script).context("Failed to read build script")?;
 
-        if !self.eval_source(source.as_bytes(), &filename)? {
-            return Ok(false);
+        let block = self
+            .parse_source(source.as_bytes(), &filename)
+            .ok_or_else(|| EngineError::ParseFailed)?;
+
+        match self.eval_block(&block) {
+            Ok(true) => {}
+            Ok(false) => return Err(EngineError::EvalFailed),
+            Err(error) => {
+                self.report_shell_error(&error);
+                return Err(EngineError::EvalFailed);
+            }
         }
 
-        Ok(true)
+        Ok(())
     }
 
-    /// Evaluate the source of a build file, returning whether or not an error
-    /// occurred.
-    fn eval_source(&mut self, source: &[u8], filename: &str) -> Result<bool> {
+    fn parse_source(&mut self, source: &[u8], filename: &str) -> Option<Block> {
         // parse the build script
         let (block, delta) = {
             let mut working_set = StateWorkingSet::new(&self.engine_state);
@@ -108,26 +141,12 @@ impl Engine {
             // perform a first-pass parse over the file
             let mut output = parse(&mut working_set, Some(filename), source, false);
 
-            let mut success = true;
-
             // extract task metadata by reparsing
-            let mut state = self.state.write();
-            if let Err(errors) = parse_metadata(&mut output, &mut state.metadata, &mut working_set)
-            {
-                success = false;
-                for error in &errors {
-                    report_error(&working_set, error);
-                }
-            };
+            parse_metadata(&mut output, &mut working_set, &mut self.state.write());
 
-            // TODO print more than one error?
-            if let Some(err) = working_set.parse_errors.first() {
-                success = false;
-                report_error(&working_set, err);
-            }
-
-            if !success {
-                return Ok(false);
+            // report parsing and internal errors
+            if self.report_errors(&working_set) {
+                return None;
             }
 
             (output, working_set.render())
@@ -135,17 +154,17 @@ impl Engine {
 
         // merge updated state
         if let Err(err) = self.engine_state.merge_delta(delta) {
-            report_error_new(&self.engine_state, &err);
-            return Ok(false);
+            self.report_shell_error(&err);
+            return None;
         }
 
-        // evaluate the build script
-        let result = eval_block(&block, &self.engine_state, &mut self.stack);
-        if let Err(err) = &result {
-            report_error_new(&self.engine_state, err);
-        }
+        Some(block)
+    }
 
-        Ok(result.is_ok())
+    /// Evaluate the source of a build file, returning whether or not the
+    /// operation completed successfully.
+    fn eval_block(&mut self, block: &Block) -> ShellResult<bool> {
+        eval_block(block, &self.engine_state, &mut self.stack)
     }
 
     pub fn project(&self) -> &Project {
@@ -160,13 +179,21 @@ impl Engine {
         RwLockReadGuard::map(self.state.read(), |s| &s.metadata)
     }
 
-    pub fn run(&mut self, task_name: &str, arguments: &str) -> Result<()> {
+    pub fn run(&mut self, task_name: &str, arguments: &str) -> EngineResult<()> {
         if !arguments.is_empty() {
             log_warning!("argument passing from the command line is currently unsupported");
         }
 
         let arguments = vec![]; // TODO parse arguments instead
-        let call_id = self.populate_metadata_for_call(task_name, arguments)?;
+
+        let Some(call_id) = self
+            .populate_metadata_for_call(task_name, arguments)
+            .inspect_err(|err| report_error_new(&self.engine_state, &**err))
+            .ok()
+            .flatten()
+        else {
+            return Err(EngineError::EvalFailed);
+        };
 
         let build_tree = generate_run_tree(call_id, &self.metadata());
 
@@ -203,7 +230,8 @@ impl Engine {
             };
         }
 
-        let runtime = Runtime::new().into_diagnostic()?;
+        let runtime =
+            Runtime::new().map_err(|_| EngineError::internal("failed to create runtime"))?;
         let _rt = runtime.enter();
 
         // run the main loop
@@ -213,17 +241,36 @@ impl Engine {
 
             // join tasks and continue to add more
             while let Some(result) = self.task_pool.join_next().await {
-                let (task_id, success) = result
-                    .into_diagnostic()
-                    .context("Failed to join task")
-                    .flatten()?;
+                let (task_call_id, success) = match result {
+                    Ok(Ok(result)) => result,
+                    Ok(Err(error)) => {
+                        self.abort_all();
+                        return Err(error);
+                    }
+                    // join error
+                    Err(err) => {
+                        if err.is_cancelled() {
+                            continue;
+                        }
 
-                self.handles.lock().remove(&task_id);
+                        return Err(EngineError::internal(format!("failed to join task: {err}")));
+                    }
+                };
+
+                // ensure the handle is removed
+                // FIXME remove handle in every brnach instead
+                self.handles.lock().remove(&task_call_id);
 
                 if !success {
-                    log_fatal!("aborting due to failed task");
                     self.abort_all();
-                    exit(exit_codes::TASK_RUN_FAIL);
+
+                    let task_name = {
+                        let metadata = self.metadata();
+                        let task_id = metadata.get_task_call(task_call_id).unwrap().task_id;
+                        metadata.get_task(task_id).unwrap().name.item.clone()
+                    };
+
+                    return Err(EngineError::TaskFailed { task_name });
                 }
 
                 spawn_tasks!();
@@ -237,7 +284,7 @@ impl Engine {
         &mut self,
         task_name: &str,
         arguments: Vec<Argument>,
-    ) -> Result<TaskCallId> {
+    ) -> DiagResult<Option<TaskCallId>> {
         let call_id = {
             let mut state = self.state.write();
 
@@ -248,22 +295,15 @@ impl Engine {
                 .unwrap()
         };
 
-        match self.populate_metadata_for_call_id(call_id) {
-            Err(err) => {
-                report_error_new(&self.engine_state, &err);
-                exit(exit_codes::TASK_DECL_FAIL);
-            }
-            Ok(false) => {
-                exit(exit_codes::TASK_DECL_FAIL);
-            }
-            Ok(true) => Ok(call_id),
+        if let Err(error) = self.populate_metadata_for_call_id(call_id) {
+            self.report_shell_error(&error);
+            return Ok(None);
         }
+
+        Ok(Some(call_id))
     }
 
-    fn populate_metadata_for_call_id(
-        &mut self,
-        call_id: TaskCallId,
-    ) -> std::result::Result<bool, ShellError> {
+    fn populate_metadata_for_call_id(&mut self, call_id: TaskCallId) -> ShellResult<bool> {
         if !eval_task_decl_body(call_id, &self.engine_state, &mut self.stack)? {
             return Ok(false);
         }
@@ -287,7 +327,7 @@ impl Engine {
         Ok(true)
     }
 
-    fn spawn_task(&mut self, node: &RunNode) -> Result<()> {
+    fn spawn_task(&mut self, node: &RunNode) -> EngineResult<()> {
         // try to abort this task and its transitive dependencies
         self.abort_tree(node);
 
@@ -320,9 +360,10 @@ impl Engine {
                     .item
                     .clone();
 
-                if !is_dirty(&call.metadata)? {
+                if !is_dirty(&call.metadata).map_err(|err| {
+                    EngineError::internal(format!("failed to check dirty status: {err}"))
+                })? {
                     log_info!("skipping task", &name);
-
                     return Ok((call_id, true));
                 }
 
@@ -337,15 +378,15 @@ impl Engine {
                 // silently ignore intentional interrupt errors
                 Err(ShellError::InterruptedByUser { .. }) => return Ok((call_id, false)),
                 Err(err) => {
-                    report_error_new(&engine_state, &err);
+                    // filter out quake internal errors--these will be emitted by quake itself
+                    if !err.is_quake_internal() {
+                        report_error_new(&engine_state, &err);
+                    }
+
                     false
                 }
                 Ok(success) => success,
             };
-
-            if !success {
-                log_error!("task failed", &name);
-            }
 
             Ok((call_id, success))
         });

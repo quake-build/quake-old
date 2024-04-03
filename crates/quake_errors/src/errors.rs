@@ -1,3 +1,5 @@
+//! Diagnostics emitted by quake.
+
 use nu_protocol::Span;
 
 pub const QUAKE_OTHER_ERROR_CODE: &str = "quake::other";
@@ -6,9 +8,7 @@ macro_rules! make_error {
     ($name:ident, $item:item) => {
         #[derive(Debug, Clone, ::thiserror::Error, ::miette::Diagnostic)]
         $item
-
-        impl $crate::QuakeDiagnostic for $name {}
-    }
+    };
 }
 
 macro_rules! make_errors {
@@ -45,7 +45,7 @@ make_errors! {
 
     // TODO add "did you mean?" or list available tasks
     #[error("Task not found: {name}")]
-    #[diagnostic(code(quake::task_not_found))]
+    #[diagnostic(code(quake::task_not_found), help("Use `quake list` to list available tasks"))]
     pub struct TaskNotFound {
         pub name: String,
         #[label("task referenced here")]

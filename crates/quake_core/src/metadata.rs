@@ -35,7 +35,7 @@ impl Metadata {
         self.tasks.get(task_id)
     }
 
-    pub fn find_task(&self, name: &str, span: Option<Span>) -> Result<&Arc<Task>> {
+    pub fn find_task(&self, name: &str, span: Option<Span>) -> DiagResult<&Arc<Task>> {
         self.tasks
             .iter()
             .find(|t| t.name.item == name)
@@ -48,7 +48,7 @@ impl Metadata {
             })
     }
 
-    pub fn find_task_id(&self, name: &str, span: Option<Span>) -> Result<TaskId> {
+    pub fn find_task_id(&self, name: &str, span: Option<Span>) -> DiagResult<TaskId> {
         self.tasks
             .iter()
             .position(|t| t.name.item == name)
@@ -66,7 +66,7 @@ impl Metadata {
         name: String,
         task: impl Into<Arc<Task>>,
         span: Span,
-    ) -> Result<TaskId> {
+    ) -> DiagResult<TaskId> {
         if let Ok(existing) = self.find_task(&name, None) {
             return Err(errors::TaskDuplicateDefinition {
                 name,

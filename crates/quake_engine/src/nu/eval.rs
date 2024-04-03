@@ -72,10 +72,9 @@ pub fn eval_task_decl_body(
     engine_state: &EngineState,
     stack: &mut Stack,
 ) -> ShellResult<bool> {
-    let mut state = State::from_engine_state_mut(engine_state);
-
     // convert task stub into task metadata
     let (call, decl_body) = {
+        let state = State::from_engine_state(engine_state);
         let call = state.metadata.get_task_call(call_id).unwrap().clone();
         let task = state.metadata.get_task(call.task_id).unwrap();
 
@@ -88,10 +87,9 @@ pub fn eval_task_decl_body(
     };
 
     // push task scope (will error if nested inside another task body)
-    state.push_scope(call_id, stack, call.span)?;
-
-    // ensure no deadlocks occur since various commands may write to the state
-    drop(state);
+    State::capture_errors_in_shell(engine_state, |state| {
+        state.push_scope(call_id, stack, call.span)
+    })?;
 
     // evaluate declaration body
     let block = engine_state.get_block(decl_body);
@@ -105,7 +103,7 @@ pub fn eval_task_decl_body(
     )?;
 
     // pop task scope
-    State::from_engine_state_mut(engine_state).pop_scope(stack, call.span)?;
+    State::capture_errors_in_shell(engine_state, |state| state.pop_scope(stack, call.span))?;
 
     Ok(success)
 }

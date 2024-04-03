@@ -1,4 +1,25 @@
-//! quake-specific reimplementations of common `miette` macros.
+//! quake-specific reimplementations and exports of error-related macros for
+//! `anyhow` and `miette`.
+//!
+//! For general, user-facing error reporting:
+//! - [`error!`]: re-export of [`anyhow::anyhow!`]
+//! - [`bail!`]: re-export of [`anyhow::bail!`]
+//!
+//! For diagnostics reporting:
+//! - [`diag_error`]: [`miette::miette!`] with `quake::other` error code.
+//! - [`diag_bail!`]: [`miette::bail!`] with `quake::other` error code.
+//!
+//! Typed error codes are generally preferred over ad-hoc ones--see the
+//! [`errors`](crate::errors) module.
+
+pub use crate::anyhow::anyhow as error;
+
+#[macro_export]
+macro_rules! bail {
+    ($($tt:tt)*) => {
+        return $crate::EngineResult::Err($crate::EngineError::Other($crate::error!($($tt)*)));
+    }
+}
 
 /// Wrapper of [`miette::miette!`] with the `quake::other` error code.
 ///
@@ -10,7 +31,7 @@
 /// # use miette::Severity;
 /// # use quake_errors::error;
 /// # let err =
-/// error!(
+/// diag_error!(
 ///     code = "quake::project::sentient",
 ///     severity = Severity::Advice,
 ///     "the project has become sentient",
@@ -20,7 +41,7 @@
 /// # assert_eq!(err.to_string(), "the project has become sentient");
 /// ```
 #[macro_export]
-macro_rules! error {
+macro_rules! diag_error {
     ($($key:ident = $value:expr,)* $fmt:literal $($arg:tt)*) => {
         $crate::miette::miette!(
             code = $crate::errors::QUAKE_OTHER_ERROR_CODE,
@@ -31,7 +52,8 @@ macro_rules! error {
     };
 }
 
-/// Wrapper of [`miette::bail!`] with the `quake::other` error code.
+/// Equivalent of [`miette::bail!`] with the `quake::other` error code (see
+/// also: [`error!`]).
 ///
 /// This should be used sparingly--it's generally better to add a typed error
 /// with a specific error code. Alternatively, you can override the error code
@@ -39,8 +61,12 @@ macro_rules! error {
 ///
 /// ```
 /// # use quake_errors::{bail, Result};
-/// fn run_task() -> Result<()> {
-///     bail!(code = "quake::task::on_fire", "the task is {task_state}", task_state = "on fire?!");
+/// fn run_task() -> DiagResult<()> {
+///     bail_diag!(
+///         code = "quake::task::on_fire",
+///         "the task is {task_state}",
+///          task_state = "on fire?!"
+///     );
 ///     Ok(())
 /// }
 /// # let err = run_task().unwrap_err();
@@ -48,11 +74,10 @@ macro_rules! error {
 /// # assert_eq!(err.to_string(), "the task is on fire?!");
 /// ```
 #[macro_export]
-macro_rules! bail {
+macro_rules! diag_bail {
     ($($key:ident = $value:expr,)* $fmt:literal $($arg:tt)*) => {
         return ::core::result::Result::Err(
-            $crate::error!(
-                code = $crate::errors::QUAKE_OTHER_ERROR_CODE,
+            $crate::diag_error!(
                 $($key = $value,)*
                 $fmt
                 $($arg)*
@@ -69,11 +94,11 @@ mod tests {
 
     #[test]
     fn test_error_macro() {
-        let error = error!("failed");
+        let error = diag_error!("failed");
         assert_eq!(error.to_string(), "failed");
         assert_eq!(error.code().unwrap().to_string(), QUAKE_OTHER_ERROR_CODE);
 
-        let error = error!(
+        let error = diag_error!(
             code = "quake::task::on_fire",
             severity = Severity::Advice,
             "task is ablaze"
@@ -87,7 +112,7 @@ mod tests {
     #[allow(unreachable_code)]
     fn test_bail_macro() {
         let err = (|| {
-            bail!("failed");
+            diag_bail!("failed");
             Ok(())
         })()
         .unwrap_err();
@@ -95,7 +120,7 @@ mod tests {
         assert_eq!(err.code().unwrap().to_string(), QUAKE_OTHER_ERROR_CODE);
 
         let err = (|| {
-            bail!(
+            diag_bail!(
                 code = "quake::task::on_fire",
                 severity = Severity::Advice,
                 "task is ablaze"

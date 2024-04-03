@@ -7,57 +7,19 @@ use nu_protocol::ast::{
 use nu_protocol::engine::StateWorkingSet;
 use nu_protocol::{span, Category, DeclId, Spanned, Type};
 
-use quake_core::metadata::{Metadata, Task, TaskFlags};
+use quake_core::metadata::{Task, TaskFlags};
 use quake_core::prelude::*;
 
 use crate::nu::commands::DependsTask;
+use crate::state::State;
 
 use super::{QUAKE_CATEGORY, QUAKE_SCOPE_VARIABLE_ID};
 
-pub fn parse_metadata(
-    block: &mut Block,
-    metadata: &mut Metadata,
-    working_set: &mut StateWorkingSet<'_>,
-) -> std::result::Result<(), Vec<ShellError>> {
-    let mut lazy_errors = Vec::new();
-
+pub fn parse_metadata(block: &mut Block, working_set: &mut StateWorkingSet<'_>, state: &mut State) {
     // register tasks in the metadata, creating new depends decls for each task
-    modify_calls(
-        working_set,
-        b"def-task",
-        block,
-        |working_set, call| match parse_def_task(call, working_set, metadata) {
-            Ok(LazyResult::Failure { errors }) => lazy_errors.extend(errors),
-            Err(err) => lazy_errors.push(err),
-            _ => {}
-        },
-    );
-
-    if lazy_errors.is_empty() {
-        Ok(())
-    } else {
-        Err(lazy_errors)
-    }
-}
-
-#[derive(Debug, Clone)]
-enum LazyResult {
-    Success,
-    Failure { errors: Vec<ShellError> },
-}
-
-impl LazyResult {
-    pub const fn success() -> Self {
-        Self::Success
-    }
-
-    pub const fn failure(errors: Vec<ShellError>) -> Self {
-        Self::Failure { errors }
-    }
-
-    pub const fn is_success(&self) -> bool {
-        matches!(self, Self::Success)
-    }
+    modify_calls(working_set, b"def-task", block, |working_set, call| {
+        state.capture_errors(|state| parse_def_task(call, working_set, state));
+    });
 }
 
 /// Reparse and register a `def-task` block as a task.
@@ -66,19 +28,15 @@ impl LazyResult {
 fn parse_def_task(
     call: &mut Box<Call>,
     working_set: &mut StateWorkingSet<'_>,
-    metadata: &mut Metadata,
-) -> ShellResult<LazyResult> {
-    // errors to emit at the end if it is not a critical failure
-    let mut late_errors = vec![];
-
+    state: &mut State,
+) -> DiagResult<()> {
     // extract name--must be const eval
     let name: Spanned<String> = call.req_const(working_set, 0)?;
 
-    // try to extract flags
+    // try to extract flags--must be const eval
     let flags = TaskFlags {
         concurrent: call.has_flag_const(working_set, "concurrent")?,
     };
-
     let is_declarative = call.has_flag_const(working_set, "decl")?;
 
     // extract and update signature in place
@@ -87,7 +45,7 @@ fn parse_def_task(
         ..
     }) = call.positional_nth_mut(1)
     else {
-        return Ok(LazyResult::failure(late_errors));
+        return Ok(());
     };
     signature.name.clone_from(&name.item);
     signature.category = Category::Custom(QUAKE_CATEGORY.to_owned());
@@ -108,7 +66,7 @@ fn parse_def_task(
 
     // extract block IDs
     let (Some(first_block), second_block) = (closures.next(), closures.next()) else {
-        return Ok(LazyResult::failure(late_errors));
+        return Ok(());
     };
 
     // update signature for the first block
@@ -122,12 +80,9 @@ fn parse_def_task(
         Some(second_block) => {
             if is_declarative {
                 // too many blocks: add error and continue
-                late_errors.push(
-                    errors::DeclTaskHasExtraBody {
-                        span: working_set.get_block(second_block).span.unwrap(),
-                    }
-                    .into_shell_error(),
-                );
+                state.error(errors::DeclTaskHasExtraBody {
+                    span: working_set.get_block(second_block).span.unwrap(),
+                });
 
                 (Some(first_block), None)
             } else {
@@ -150,7 +105,7 @@ fn parse_def_task(
     // insert placeholder to be updated later with a `DependsTask` if successful
     let depends_decl_name = format!("depends {name}", name = &name.item);
     let depends_decl_id = {
-        let task_id = metadata.next_task_id();
+        let task_id = state.metadata.next_task_id();
 
         // modify the signature to mimick that of the `Depends` command
         let mut signature = signature;
@@ -171,9 +126,7 @@ fn parse_def_task(
 
         // transform `Depends` calls to `DependsTask`
         modify_calls(working_set, b"depends", &mut block, |working_set, call| {
-            if let Err(err) = transform_depends(call, working_set, metadata) {
-                late_errors.push(err);
-            }
+            state.capture_errors(|state| transform_depends(call, working_set, state));
         });
 
         *working_set.get_block_mut(decl_body) = block;
@@ -190,7 +143,7 @@ fn parse_def_task(
 
     // note: errors when task has already been defined
     let name_span = name.span;
-    if let Err(err) = metadata.register_task(
+    if let Err(error) = state.metadata.register_task(
         name.item.clone(),
         Arc::new(Task {
             name,
@@ -201,7 +154,7 @@ fn parse_def_task(
         }),
         name_span,
     ) {
-        working_set.error(err.into_parse_error());
+        state.error(error);
 
         // clean up to prevent future collisions
         working_set
@@ -210,36 +163,29 @@ fn parse_def_task(
             .remove(depends_decl_name.as_bytes());
     }
 
-    if late_errors.is_empty() {
-        Ok(LazyResult::success())
-    } else {
-        Ok(LazyResult::failure(late_errors))
-    }
+    Ok(())
 }
 
 fn transform_depends(
     call: &mut Box<Call>,
     working_set: &mut StateWorkingSet<'_>,
-    metadata: &mut Metadata,
-) -> ShellResult<()> {
+    state: &mut State,
+) -> DiagResult<()> {
     // update the decl id to the corresponding `DependsTask` command
     // extract dep name--must be const eval
-    let dep_id: Spanned<String> = call.req_const(working_set, 0)?;
-
-    // remove the name span
-    let name_span = call.arguments.remove(0).span();
+    let Ok(dep_id) = call.req_const::<Spanned<String>>(working_set, 0) else {
+        return Ok(());
+    };
 
     // find the decl ID to the corresponding `DependsTask` command
-    let depends_decl_id = metadata
-        .find_task(&dep_id.item, Some(dep_id.span))
-        .into_shell_result()?
+    let depends_decl_id = state
+        .metadata
+        .find_task(&dep_id.item, Some(dep_id.span))?
         .depends_decl_id
         .ok_or(errors::TaskNotFound {
             name: dep_id.item,
-            span: Some(name_span),
-        })
-        .into_diagnostic()
-        .into_shell_result()?;
+            span: Some(dep_id.span),
+        })?;
 
     *call = {
         working_set.enter_scope();
@@ -274,11 +220,12 @@ fn transform_depends(
         let arg_spans = call
             .arguments
             .iter()
+            .skip(1)
             .map(Argument::span)
             .collect::<Vec<_>>();
         let call = parse_internal_call(
             working_set,
-            span(&[call.head, name_span]),
+            span(&[call.head, dep_id.span]),
             &arg_spans,
             depends_decl_id,
         )

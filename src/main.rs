@@ -77,19 +77,17 @@ fn parse_args() -> ArgMatches {
         .get_matches()
 }
 
-fn main() -> Result<()> {
+fn main() -> CliResult {
     let matches = parse_args();
 
     let project = {
         if let Some(project_root) = matches.get_one::<PathBuf>("project") {
             Project::new(project_root.clone())?
         } else {
-            Project::locate(get_init_cwd().ok_or_else(|| {
-                error!(
-                    code = "quake::cli::unknown_working_directory",
-                    "Failed to determine current working directory"
-                )
-            })?)?
+            Project::locate(
+                get_init_cwd()
+                    .ok_or_else(|| error!("Failed to determine current working directory"))?,
+            )?
         }
     };
 
@@ -123,7 +121,7 @@ fn main() -> Result<()> {
             let tasks: Vec<_> = metadata.task().map(|t| &t.name.item).collect();
 
             if json {
-                println!("{}", to_json(&tasks).into_diagnostic()?);
+                println!("{}", to_json(&tasks).unwrap());
             } else if tasks.is_empty() {
                 println!("No available tasks.");
             } else {
@@ -134,12 +132,12 @@ fn main() -> Result<()> {
             }
         }
         Some(("inspect", _)) => {
-            println!("{}", to_json(&engine.metadata().clone()).into_diagnostic()?);
+            println!("{}", to_json(&engine.metadata().clone()).unwrap());
         }
         Some((name, _)) => {
             unimplemented!("subcommand {name}")
         }
     }
 
-    Ok(())
+    CliResult::success()
 }

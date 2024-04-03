@@ -10,8 +10,6 @@ use parking_lot::RwLock;
 
 use crate::state::State;
 
-// pub(self) mod custom_syntax;
-
 pub mod commands;
 pub mod eval;
 pub mod parse;
@@ -34,7 +32,7 @@ pub const QUAKE_SCOPE_VARIABLE_ID: VarId = 6;
 /// assigned to quake commands.
 pub const QUAKE_CATEGORY: &str = "quake";
 
-pub fn create_engine_state(state: Arc<RwLock<State>>) -> crate::Result<EngineState> {
+pub fn create_engine_state(state: Arc<RwLock<State>>) -> EngineState {
     let mut engine_state = add_shell_command_context(create_default_context());
 
     // TODO merge with PWD logic below
@@ -89,7 +87,7 @@ pub fn create_engine_state(state: Arc<RwLock<State>>) -> crate::Result<EngineSta
         .merge_delta(delta)
         .expect("Failed to register custom engine state");
 
-    Ok(engine_state)
+    engine_state
 }
 
 pub fn create_stack(cwd: impl AsRef<Path>) -> Stack {

@@ -13,17 +13,17 @@ pub fn get_init_cwd() -> Option<PathBuf> {
         .or_else(|| std::env::var(PWD_ENV).ok().map(Into::into))
 }
 
-pub fn latest_timestamp(paths: &[impl AsRef<Path>]) -> Result<Option<SystemTime>> {
+pub fn latest_timestamp(paths: &[impl AsRef<Path>]) -> DiagResult<Option<SystemTime>> {
     Ok(paths
         .iter()
         .filter(|p| p.as_ref().exists())
         .map(|s| fs::metadata(s).and_then(|m| m.modified()).into_diagnostic())
-        .collect::<Result<Vec<_>>>()?
+        .collect::<DiagResult<Vec<_>>>()?
         .into_iter()
         .max())
 }
 
-pub fn is_dirty(task: &TaskCallMetadata) -> Result<bool> {
+pub fn is_dirty(task: &TaskCallMetadata) -> DiagResult<bool> {
     // if either is undefined, assume dirty
     if task.sources.is_empty() || task.artifacts.is_empty() {
         return Ok(true);

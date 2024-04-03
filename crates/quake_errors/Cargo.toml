@@ -6,6 +6,9 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+quake_log = { path = "../quake_log" }
+
+anyhow = "1.0.81"
 miette = "7.2.0"
 nu-protocol.workspace = true
 thiserror = "1.0.58"
