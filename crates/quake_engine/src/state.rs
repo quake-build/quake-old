@@ -29,6 +29,7 @@ type ScopeId = usize;
 #[derive(Debug, Default)]
 pub struct State {
     pub metadata: Metadata,
+    pub errors: Vec<ErrReport>,
     scopes: BTreeMap<ScopeId, Scope>,
 }
 
@@ -49,12 +50,35 @@ impl State {
         get_state(engine_state).write_arc()
     }
 
-    pub fn check_in_scope(&self, stack: &Stack, span: Span) -> ShellResult<()> {
+    pub fn capture_errors<T>(&mut self, f: impl FnOnce(&mut State) -> DiagResult<T>) -> Option<T> {
+        match f(self) {
+            Err(error) => {
+                self.errors.push(error);
+                None
+            }
+            Ok(result) => Some(result),
+        }
+    }
+
+    pub fn capture_errors_in_shell<T>(
+        engine_state: &EngineState,
+        f: impl FnOnce(&mut State) -> DiagResult<T>,
+    ) -> ShellResult<T> {
+        Self::from_engine_state_mut(engine_state)
+            .capture_errors(f)
+            .ok_or_else(ShellError::quake_internal)
+    }
+
+    pub fn error(&mut self, error: impl Into<ErrReport>) {
+        self.errors.push(error.into());
+    }
+
+    pub fn check_in_scope(&self, stack: &Stack, span: Span) -> DiagResult<()> {
         get_scope_id(stack, span)?;
         Ok(())
     }
 
-    pub fn scope_call_id(&self, stack: &Stack, span: Span) -> ShellResult<TaskCallId> {
+    pub fn scope_call_id(&self, stack: &Stack, span: Span) -> DiagResult<TaskCallId> {
         let id = get_scope_id(stack, span)?;
         Ok(self
             .scopes
@@ -67,7 +91,7 @@ impl State {
         &self,
         stack: &Stack,
         span: Span,
-    ) -> ShellResult<impl Deref<Target = TaskCallMetadata> + '_> {
+    ) -> DiagResult<impl Deref<Target = TaskCallMetadata> + '_> {
         let call_id = self.scope_call_id(stack, span)?;
         Ok(self.metadata.task_call_metadata_mut(call_id).unwrap())
     }
@@ -76,7 +100,7 @@ impl State {
         &self,
         stack: &Stack,
         span: Span,
-    ) -> ShellResult<impl DerefMut<Target = TaskCallMetadata> + '_> {
+    ) -> DiagResult<impl DerefMut<Target = TaskCallMetadata> + '_> {
         let call_id = self.scope_call_id(stack, span)?;
         Ok(self.metadata.task_call_metadata_mut(call_id).unwrap())
     }
@@ -86,14 +110,12 @@ impl State {
         call_id: TaskCallId,
         stack: &mut Stack,
         span: Span,
-    ) -> ShellResult<()> {
+    ) -> DiagResult<()> {
         // error if nested scopes (i.e. if scope variable is non-negative)
         if let Ok(Value::Int { val, .. }) = stack.get_var(QUAKE_SCOPE_VARIABLE_ID, span)
             && !val.is_negative()
         {
-            return Err(errors::NestedScopes { span })
-                .into_diagnostic()
-                .into_shell_result();
+            return Err(errors::NestedScopes { span }.into());
         }
 
         let scope_id = self.scopes.len();
@@ -107,7 +129,7 @@ impl State {
         Ok(())
     }
 
-    pub fn pop_scope(&mut self, stack: &mut Stack, span: Span) -> ShellResult<()> {
+    pub fn pop_scope(&mut self, stack: &mut Stack, span: Span) -> DiagResult<()> {
         let scope_id = get_scope_id(stack, span)?;
         self.scopes
             .remove(&scope_id)
@@ -116,7 +138,7 @@ impl State {
         Ok(())
     }
 
-    pub fn peek_scope(&self, stack: &Stack, span: Span) -> ShellResult<TaskCallId> {
+    pub fn peek_scope(&self, stack: &Stack, span: Span) -> DiagResult<TaskCallId> {
         let scope_id = get_scope_id(stack, span)?;
         Ok(self
             .scopes
@@ -152,16 +174,14 @@ fn get_state(engine_state: &EngineState) -> Arc<RwLock<State>> {
 }
 
 #[inline]
-fn get_scope_id(stack: &Stack, span: Span) -> ShellResult<ScopeId> {
+fn get_scope_id(stack: &Stack, span: Span) -> DiagResult<ScopeId> {
     if let Ok(Value::Int { val, .. }) = stack.get_var(QUAKE_SCOPE_VARIABLE_ID, span) {
         if let Ok(val) = val.try_into() {
             return Ok(val);
         }
     }
 
-    Err(errors::InvalidScope { span })
-        .into_diagnostic()
-        .into_shell_result()
+    Err(errors::InvalidScope { span }.into())
 }
 
 #[derive(Debug, Clone)]

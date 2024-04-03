@@ -19,16 +19,16 @@ impl Project {
     /// ## Errors
     ///
     /// If the project root is not a directory, this will return an `Err` with
-    /// [`errors::ProjectNotFound`].
-    /// If no build script file is found in the
+    /// [`errors::ProjectNotFound`]. If no build script file is found in the
     /// project root, this will return an `Err` with
     /// [`errors::BuildScriptNotFound`].
-    pub fn new(project_root: PathBuf) -> Result<Self> {
+    pub fn new(project_root: PathBuf) -> EngineResult<Self> {
         if !project_root.is_dir() {
-            return Err(errors::ProjectNotFound.into());
+            bail!("{}", errors::ProjectNotFound);
         }
 
-        let build_script = find_build_script(&project_root).ok_or(errors::BuildScriptNotFound)?;
+        let build_script = find_build_script(&project_root)
+            .ok_or_else(|| error!("{}", errors::BuildScriptNotFound))?;
 
         Ok(Self {
             project_root,
@@ -43,9 +43,10 @@ impl Project {
     ///
     /// If the project root is not a directory or no project can be found, this
     /// will return an `Err` with [`errors::ProjectNotFound`].
-    pub fn locate(current_dir: impl AsRef<Path>) -> Result<Self> {
+    pub fn locate(current_dir: impl AsRef<Path>) -> EngineResult<Self> {
         if !current_dir.as_ref().is_dir() {
-            return Err(errors::ProjectNotFound.into());
+            eprintln!("{}", errors::ProjectNotFound);
+            bail!(EngineError::LoadFailed);
         }
 
         if let Some(build_script) = find_build_script(&current_dir) {
@@ -56,7 +57,8 @@ impl Project {
         } else if let Some(parent) = current_dir.as_ref().parent() {
             Self::locate(parent)
         } else {
-            Err(errors::ProjectNotFound.into())
+            eprintln!("{}", errors::ProjectNotFound);
+            bail!("{}", EngineError::LoadFailed);
         }
     }
 

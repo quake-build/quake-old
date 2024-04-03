@@ -6,7 +6,6 @@ use nu_protocol::engine::{Closure, Command, EngineState, Stack};
 use nu_protocol::{
     Category, PipelineData, ShellError, Signature, Span, Spanned, SyntaxShape, Type, Value,
 };
-use quake_core::errors::IntoShellResult;
 use quake_core::metadata::{Task, TaskCallId, TaskFlags};
 
 use crate::state::State;
@@ -100,19 +99,6 @@ impl Command for Subtask {
             concurrent: call.has_flag(engine_state, stack, "concurrent")?,
         };
 
-        let mut state = State::from_engine_state_mut(engine_state);
-
-        let parent = {
-            let call_id = state.peek_scope(stack, span)?;
-            let task_id = state.metadata.get_task_call(call_id).unwrap().task_id;
-            state.metadata.get_task(task_id).unwrap().clone()
-        };
-        name.item = format!(
-            "{parent_name}/{name}",
-            parent_name = &parent.name.item,
-            name = name.item
-        );
-
         let block = engine_state.get_block(closure.block_id);
         let mut constants = Vec::with_capacity(1);
         if let Some(arg) = block.signature.required_positional.first() {
@@ -141,9 +127,19 @@ impl Command for Subtask {
             }
         }
 
-        let task_id = state
-            .metadata
-            .register_task(
+        let name = State::capture_errors_in_shell(engine_state, |state| {
+            let parent = {
+                let call_id = state.peek_scope(stack, span)?;
+                let task_id = state.metadata.get_task_call(call_id).unwrap().task_id;
+                state.metadata.get_task(task_id).unwrap().clone()
+            };
+            name.item = format!(
+                "{parent_name}/{name}",
+                parent_name = &parent.name.item,
+                name = name.item
+            );
+
+            let task_id = state.metadata.register_task(
                 name.item.clone(),
                 Arc::new(Task {
                     name: name.clone(),
@@ -153,17 +149,19 @@ impl Command for Subtask {
                     run_body: Some(closure.block_id),
                 }),
                 name.span,
-            )
-            .into_shell_result()?;
+            )?;
 
-        let call_id = state
-            .metadata
-            .register_task_call(task_id, span, Vec::new(), constants)
-            .unwrap();
-        state
-            .scope_metadata_mut(stack, span)?
-            .dependencies
-            .push(call_id);
+            let call_id = state
+                .metadata
+                .register_task_call(task_id, span, Vec::new(), constants)
+                .unwrap();
+            state
+                .scope_metadata_mut(stack, span)?
+                .dependencies
+                .push(call_id);
+
+            Ok(name)
+        })?;
 
         Ok(PipelineData::Value(
             Value::String {
@@ -202,12 +200,12 @@ impl Command for Depends {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        // (parse internal, replaced with `DependsTask`)
+        // (parser internal, replaced with `DependsTask`)
 
         // emit an error if used in an invalid location
-        //
-        // TODO do this during the parse phase
-        State::from_engine_state(engine_state).check_in_scope(stack, call.head)?;
+        State::capture_errors_in_shell(engine_state, |state| {
+            state.check_in_scope(stack, call.head)
+        })?;
 
         Ok(PipelineData::empty())
     }
@@ -239,23 +237,26 @@ impl Command for DependsTask {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let mut state = State::from_engine_state_mut(engine_state);
-        state.check_in_scope(stack, call.head)?;
+        State::capture_errors_in_shell(engine_state, |state| {
+            state.check_in_scope(stack, call.head)?;
 
-        // register the call_id and add it as a dependency
-        let call_id = state
-            .metadata
-            .register_task_call(
-                self.task_id,
-                call.span(),
-                call.arguments.clone(),
-                Vec::new(),
-            )
-            .unwrap();
-        state
-            .scope_metadata_mut(stack, call.head)?
-            .dependencies
-            .push(call_id);
+            // register the call_id and add it as a dependency
+            let call_id = state
+                .metadata
+                .register_task_call(
+                    self.task_id,
+                    call.span(),
+                    call.arguments.clone(),
+                    Vec::new(),
+                )
+                .unwrap();
+            state
+                .scope_metadata_mut(stack, call.head)?
+                .dependencies
+                .push(call_id);
+
+            Ok(())
+        })?;
 
         Ok(PipelineData::Empty)
     }
@@ -291,13 +292,15 @@ impl Command for Sources {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let span = call.span();
         let values: Vec<String> = call.req(engine_state, stack, 0)?;
 
-        State::from_engine_state_mut(engine_state)
-            .scope_metadata_mut(stack, span)?
-            .sources
-            .extend(values.iter().map(Into::into));
+        State::capture_errors_in_shell(engine_state, |state| {
+            state
+                .scope_metadata_mut(stack, call.head)?
+                .sources
+                .extend(values.iter().map(Into::into));
+            Ok(())
+        })?;
 
         Ok(PipelineData::empty())
     }
@@ -333,13 +336,15 @@ impl Command for Produces {
         call: &Call,
         _input: PipelineData,
     ) -> Result<PipelineData, ShellError> {
-        let span = call.span();
         let values: Vec<String> = call.req(engine_state, stack, 0)?;
 
-        State::from_engine_state_mut(engine_state)
-            .scope_metadata_mut(stack, span)?
-            .artifacts
-            .extend(values.iter().map(Into::into));
+        State::capture_errors_in_shell(engine_state, |state| {
+            state
+                .scope_metadata_mut(stack, call.head)?
+                .artifacts
+                .extend(values.iter().map(Into::into));
+            Ok(())
+        })?;
 
         Ok(PipelineData::empty())
     }
