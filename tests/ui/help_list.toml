@@ -3,7 +3,7 @@ status.code = 0
 stdout = """
 List the available tasks
 
-Usage: quake list [OPTIONS]
+Usage: quake[EXE] list [OPTIONS]
 
 Options:
   -h, --help  Print help

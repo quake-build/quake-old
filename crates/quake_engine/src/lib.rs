@@ -53,7 +53,7 @@ pub struct Engine {
 impl Engine {
     pub fn load(project: Project, options: EngineOptions) -> Result<Self> {
         #[cfg(windows)]
-        nu_ansi_term::enable_ansi_support();
+        nu_ansi_term::enable_ansi_support().expect("Failed to initialize ANSI support");
 
         let state = Arc::new(RwLock::new(State::new()));
 

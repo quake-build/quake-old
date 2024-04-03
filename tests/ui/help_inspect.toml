@@ -3,7 +3,7 @@ status.code = 0
 stdout = """
 Dump build script metadata as JSON
 
-Usage: quake inspect [OPTIONS]
+Usage: quake[EXE] inspect [OPTIONS]
 
 Options:
   -h, --help  Print help
