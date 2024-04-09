@@ -34,9 +34,9 @@ impl Command for DefTask {
                 Some('c'),
             )
             .switch(
-                "decl",
-                "make this a declarative task (with a single decl body and no run body)",
-                Some('d'),
+                "pure",
+                "make this a purely declarative task, with only a single declaration body and no run body",
+                None,
             )
             .required("params", SyntaxShape::Signature, "parameters")
             .required("first_body", SyntaxShape::Closure(None), "first body")

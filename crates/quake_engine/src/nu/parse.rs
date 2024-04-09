@@ -37,7 +37,7 @@ fn parse_def_task(
     let flags = TaskFlags {
         concurrent: call.has_flag_const(working_set, "concurrent")?,
     };
-    let is_declarative = call.has_flag_const(working_set, "decl")?;
+    let is_pure = call.has_flag_const(working_set, "pure")?;
 
     // extract and update signature in place
     let Some(Expression {
@@ -78,9 +78,9 @@ fn parse_def_task(
     // determine which blocks correspond to which bodies
     let (run_body, decl_body) = match second_block {
         Some(second_block) => {
-            if is_declarative {
+            if is_pure {
                 // too many blocks: add error and continue
-                state.error(errors::DeclTaskHasExtraBody {
+                state.error(errors::PureTaskHasExtraBody {
                     span: working_set.get_block(second_block).span.unwrap(),
                 });
 
@@ -95,13 +95,14 @@ fn parse_def_task(
             }
         }
         None => {
-            if is_declarative {
+            if is_pure {
                 (None, Some(first_block))
             } else {
                 (Some(first_block), None)
             }
         }
     };
+
     // insert placeholder to be updated later with a `DependsTask` if successful
     let depends_decl_name = format!("depends {name}", name = &name.item);
     let depends_decl_id = {

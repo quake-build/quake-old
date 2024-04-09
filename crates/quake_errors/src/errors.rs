@@ -62,12 +62,12 @@ make_errors! {
         pub span: Span,
     }
 
-    #[error("Declarative task has extra body")]
+    #[error("Pure task has extra body")]
     #[diagnostic(
         code(quake::decl_task_has_extra_body),
-        help("Remove the `--decl` flag or remove the extra block")
+        help("Remove the `--pure` flag or remove the extra block")
     )]
-    pub struct DeclTaskHasExtraBody {
+    pub struct PureTaskHasExtraBody {
         #[label("extra block")]
         pub span: Span,
     }
