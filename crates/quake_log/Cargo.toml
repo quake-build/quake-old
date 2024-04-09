@@ -5,8 +5,8 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-anstream = "0.6.11"
-anstyle = "1.0.5"
+anstream = "0.6.13"
+anstyle = "1.0.6"
 serde = { workspace = true, optional = true }
 
 [lints]
