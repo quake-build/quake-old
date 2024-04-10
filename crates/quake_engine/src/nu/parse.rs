@@ -260,7 +260,7 @@ fn modify_calls_in_block(
         .pipelines
         .iter_mut()
         .flat_map(|p| &mut p.elements)
-        .map(|pe| pe.expression_mut())
+        .map(|pe| &mut pe.expr)
     {
         modify_calls_in_expr(working_set, decl_id, expr, func);
     }
@@ -289,8 +289,8 @@ fn modify_calls_in_expr(
                 modify_calls_in_expr(working_set, decl_id, expr, func);
             }
         }
-        Expr::ExternalCall(expr, args, _) => {
-            modify_calls_in_expr(working_set, decl_id, expr, func);
+        Expr::ExternalCall(head, args) => {
+            modify_calls_in_expr(working_set, decl_id, head, func);
 
             for arg in args {
                 let (ExternalArgument::Regular(expr) | ExternalArgument::Spread(expr)) = arg;

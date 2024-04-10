@@ -1,4 +1,5 @@
 use nu_protocol::ast::{Argument, Block};
+use nu_protocol::debugger::WithoutDebug;
 use nu_protocol::engine::{EngineState, Stack};
 use nu_protocol::{print_if_stream, PipelineData, Span, Value, VarId};
 
@@ -17,13 +18,11 @@ pub fn eval_block(
         return Ok(true);
     }
 
-    let result = nu_engine::eval_block_with_early_return(
+    let result = nu_engine::eval_block_with_early_return::<WithoutDebug>(
         engine_state,
         stack,
         block,
         PipelineData::Empty,
-        false,
-        false,
     );
 
     match result {
@@ -174,7 +173,7 @@ fn eval_body(
         .enumerate()
     {
         let value = if let Some(expr) = positional_arg_vals.get(param_idx) {
-            nu_engine::eval_expression(engine_state, stack, expr)?
+            nu_engine::eval_expression::<WithoutDebug>(engine_state, stack, expr)?
         } else if let Some(value) = &param.default_value {
             value.clone()
         } else {
@@ -187,7 +186,7 @@ fn eval_body(
     if let (Some(rest_arg), Some(rest_val)) = (&signature.rest_positional, &rest_arg_val) {
         callee_stack.add_var(
             rest_arg.var_id.unwrap(),
-            nu_engine::eval_expression(engine_state, stack, rest_val)?,
+            nu_engine::eval_expression::<WithoutDebug>(engine_state, stack, rest_val)?,
         );
     }
 
@@ -204,7 +203,7 @@ fn eval_body(
             .map(|(_, _, expr)| expr)
         {
             if let Some(expr) = expr {
-                nu_engine::eval_expression(engine_state, stack, expr)?
+                nu_engine::eval_expression::<WithoutDebug>(engine_state, stack, expr)?
             } else if let Some(value) = &named.default_value {
                 value.clone()
             } else {
