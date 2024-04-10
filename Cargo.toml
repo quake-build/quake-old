@@ -8,7 +8,7 @@ license = "MIT"
 edition = "2021"
 
 [workspace.dependencies]
-nu-ansi-term = "0.49.0"
+nu-ansi-term = "0.50.0"
 nu-cli = { git = "https://github.com/quake-build/nushell" }
 nu-cmd-lang = { git = "https://github.com/quake-build/nushell" }
 nu-command = { git = "https://github.com/quake-build/nushell", features = ["which-support"] }
