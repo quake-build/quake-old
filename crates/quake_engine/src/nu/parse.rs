@@ -1,3 +1,5 @@
+#![deny(clippy::wildcard_enum_match_arm)]
+
 use std::sync::Arc;
 
 use nu_parser::{discover_captures_in_expr, parse_internal_call};
@@ -389,6 +391,10 @@ fn modify_calls_in_pattern(
             }
         }
         Pattern::Value(expr) => modify_calls_in_expr(working_set, decl_id, expr, func),
-        _ => {}
+        Pattern::Variable(_)
+        | Pattern::Rest(_)
+        | Pattern::IgnoreRest
+        | Pattern::IgnoreValue
+        | Pattern::Garbage => {}
     }
 }
