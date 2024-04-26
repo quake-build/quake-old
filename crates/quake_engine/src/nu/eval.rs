@@ -1,7 +1,7 @@
 use nu_protocol::ast::{Argument, Block};
 use nu_protocol::debugger::WithoutDebug;
 use nu_protocol::engine::{EngineState, Stack};
-use nu_protocol::{print_if_stream, PipelineData, Span, Value, VarId};
+use nu_protocol::{PipelineData, Span, Value, VarId};
 
 use quake_core::metadata::TaskCallId;
 use quake_core::prelude::*;
@@ -25,36 +25,18 @@ pub fn eval_block(
         PipelineData::Empty,
     );
 
+    // reset vt processing, aka ansi because illbehaved externals can break it
+    #[cfg(windows)]
+    {
+        let _ = nu_utils::enable_vt_processing();
+    }
+
     match result {
         Ok(pipeline_data) => {
-            let result = if let PipelineData::ExternalStream {
-                stdout: stream,
-                stderr: stderr_stream,
-                exit_code,
-                ..
-            } = pipeline_data
-            {
-                print_if_stream(stream, stderr_stream, false, exit_code)
-            } else {
-                pipeline_data.drain_with_exit_code()
-            };
-
-            match result {
-                Ok(exit_code) => {
-                    set_last_exit_code(stack, exit_code);
-                    if exit_code != 0 {
-                        return Ok(false);
-                    }
-                }
-                Err(err) => {
-                    return Err(err);
-                }
-            }
-
-            // reset vt processing, aka ansi because illbehaved externals can break it
-            #[cfg(windows)]
-            {
-                let _ = nu_utils::enable_vt_processing();
+            let exit_code = pipeline_data.print(engine_state, stack, false, false)?;
+            set_last_exit_code(stack, exit_code);
+            if exit_code != 0 {
+                return Ok(false);
             }
         }
         Err(err) => {
