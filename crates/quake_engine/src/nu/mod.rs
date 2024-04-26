@@ -14,6 +14,7 @@ pub mod commands;
 pub mod eval;
 pub mod parse;
 pub mod types;
+pub mod utils;
 
 /// The ID of the `$quake` variable, which holds the internal state of the
 /// program.

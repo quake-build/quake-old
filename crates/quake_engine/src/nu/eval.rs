@@ -6,8 +6,8 @@ use nu_protocol::{print_if_stream, PipelineData, Span, Value, VarId};
 use quake_core::metadata::TaskCallId;
 use quake_core::prelude::*;
 
+use crate::nu::utils::set_last_exit_code;
 use crate::state::State;
-use crate::utils::set_last_exit_code;
 
 pub fn eval_block(
     block: &Block,

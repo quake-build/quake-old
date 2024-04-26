@@ -27,7 +27,6 @@ use crate::state::State;
 mod nu;
 mod run_tree;
 mod state;
-mod utils;
 
 #[derive(Debug, Clone)]
 pub struct EngineOptions {
