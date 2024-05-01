@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 use nu_parser::parse;
@@ -53,8 +53,10 @@ impl Engine {
 
         let state = Arc::new(RwLock::new(State::new()));
 
-        let engine_state = create_engine_state(state.clone());
+        let mut engine_state = create_engine_state(state.clone());
         let stack = create_stack(project.project_root());
+
+        engine_state.pipeline_externals_state = Arc::new((AtomicU32::new(1), AtomicU32::new(2)));
 
         let mut engine = Self {
             project,

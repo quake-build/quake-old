@@ -68,7 +68,7 @@ pub fn create_engine_state(state: Arc<RwLock<State>>) -> EngineState {
 
         macro_rules! bind_command {
             ($($command:expr),* $(,)?) => {
-                $(working_set.add_decl(Box::new($command));)*
+                $(working_set.add_decl(Box::new($command)));*
             };
         }
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use nu_engine::CallExt;
 use nu_protocol::ast::Call;
-use nu_protocol::engine::{Closure, Command, EngineState, Stack};
+use nu_protocol::engine::{Closure, Command, CommandType, EngineState, Stack, StateWorkingSet};
 use nu_protocol::{
     Category, PipelineData, ShellError, Signature, Span, Spanned, SyntaxShape, Type, Value,
 };
@@ -21,28 +21,37 @@ impl Command for DefTask {
     }
 
     fn usage(&self) -> &str {
-        "Define a quake task"
+        "Define a quake task."
+    }
+
+    fn extra_usage(&self) -> &str {
+        "\
+Must provide a declaration body (prefixed with 'where') and/or a run
+body (prefixed with 'do'). "
     }
 
     fn signature(&self) -> Signature {
         Signature::build("def-task")
             .input_output_types(vec![(Type::Nothing, Type::Nothing)])
             .required("name", SyntaxShape::String, "task name")
+            .required("params", SyntaxShape::Signature, "parameters")
             .switch(
                 "concurrent",
                 "allow this task to be run concurrently with others",
                 Some('c'),
             )
-            .switch(
-                "pure",
-                "make this a purely declarative task, with only a single declaration body and no run body",
-                None,
+            .optional(
+                "decl_body",
+                SyntaxShape::Keyword(b"where".to_vec(), Box::new(SyntaxShape::Closure(None))),
+                "body to be evaluated when this task is triggered",
             )
-            .required("params", SyntaxShape::Signature, "parameters")
-            .required("first_body", SyntaxShape::Closure(None), "first body")
-            .required("second_body", SyntaxShape::Closure(None), "second body")
+            .optional(
+                "run_body",
+                SyntaxShape::Keyword(b"do".to_vec(), Box::new(SyntaxShape::Closure(None))),
+                "body to be evaluated when this task is triggered",
+            )
+            .required("", SyntaxShape::Closure(None), "") // TODO hide from
             .creates_scope()
-            .category(Category::Custom(QUAKE_CATEGORY.to_owned()))
     }
 
     fn run(
@@ -54,6 +63,24 @@ impl Command for DefTask {
     ) -> Result<PipelineData, ShellError> {
         // (parser internal)
         Ok(PipelineData::Empty)
+    }
+
+    fn run_const(
+        &self,
+        _working_set: &StateWorkingSet,
+        _call: &Call,
+        _input: PipelineData,
+    ) -> Result<PipelineData, ShellError> {
+        // (parser internal)
+        Ok(PipelineData::Empty)
+    }
+
+    fn is_const(&self) -> bool {
+        true
+    }
+
+    fn command_type(&self) -> CommandType {
+        CommandType::Other
     }
 }
 

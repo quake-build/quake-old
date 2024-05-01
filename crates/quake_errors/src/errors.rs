@@ -62,13 +62,13 @@ make_errors! {
         pub span: Span,
     }
 
-    #[error("Pure task has extra body")]
+    #[error("Task is missing blocks")]
     #[diagnostic(
-        code(quake::decl_task_has_extra_body),
-        help("Remove the `--pure` flag or remove the extra block")
+        code(quake::task_missing_blocks),
+        help("Tasks must declare a decl body (a block prefixed with \"where\") and/or a run body (a block prefixed with \"run\")")
     )]
-    pub struct PureTaskHasExtraBody {
-        #[label("extra block")]
+    pub struct TaskMissingBlocks {
+        #[label("command used here")]
         pub span: Span,
     }
 

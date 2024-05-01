@@ -1,13 +1,14 @@
 #![deny(clippy::wildcard_enum_match_arm)]
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
-use nu_parser::{discover_captures_in_expr, parse_internal_call};
+use nu_parser::{discover_captures_in_expr, parse_internal_call, parse_value};
 use nu_protocol::ast::{
     Argument, Block, Call, Expr, Expression, ExternalArgument, MatchPattern, Pattern, RecordItem,
 };
-use nu_protocol::engine::StateWorkingSet;
-use nu_protocol::{span, Category, DeclId, Spanned, Type};
+use nu_protocol::engine::{Closure, StateWorkingSet};
+use nu_protocol::{span, Category, DeclId, Span, Spanned, SyntaxShape, Type};
 
 use quake_core::metadata::{Task, TaskFlags};
 use quake_core::prelude::*;
@@ -32,6 +33,10 @@ fn parse_def_task(
     working_set: &mut StateWorkingSet<'_>,
     state: &mut State,
 ) -> DiagResult<()> {
+    if call.has_flag_const(working_set, "help")? {
+        return Ok(());
+    }
+
     // extract name--must be const eval
     let name: Spanned<String> = call.req_const(working_set, 0)?;
 
@@ -39,7 +44,6 @@ fn parse_def_task(
     let flags = TaskFlags {
         concurrent: call.has_flag_const(working_set, "concurrent")?,
     };
-    let is_pure = call.has_flag_const(working_set, "pure")?;
 
     // extract and update signature in place
     let Some(Expression {
@@ -54,56 +58,46 @@ fn parse_def_task(
 
     let signature = signature.clone();
 
-    let mut closures = call.arguments.iter().filter_map(|a| {
-        if let Some(Expression {
-            expr: Expr::Closure(block_id),
-            ..
-        }) = a.expression()
-        {
-            Some(*block_id)
-        } else {
-            None
-        }
-    });
-
-    // extract block IDs
-    let (Some(first_block), second_block) = (closures.next(), closures.next()) else {
-        return Ok(());
-    };
-
-    // update signature for the first block
-    working_set
-        .get_block_mut(first_block)
-        .signature
-        .clone_from(&signature);
-
-    // determine which blocks correspond to which bodies
-    let (run_body, decl_body) = match second_block {
-        Some(second_block) => {
-            if is_pure {
-                // too many blocks: add error and continue
-                state.error(errors::PureTaskHasExtraBody {
-                    span: working_set.get_block(second_block).span.unwrap(),
+    // extract closures by keyword
+    let (mut decl_body, mut run_body) = (None, None);
+    for expr in call.arguments.iter_mut().flat_map(|a| a.expression_mut()) {
+        match_expr!(Expr::Keyword(kw_name, _, kw_expr), expr, else { continue; });
+        let block_id = match &kw_expr.expr {
+            Expr::Closure(block_id) => *block_id,
+            Expr::Garbage => {
+                *kw_expr = Box::new(parse_value(
+                    working_set,
+                    kw_expr.span,
+                    &SyntaxShape::Closure(None),
+                ));
+                match_expr!(Expr::Closure(block_id), **kw_expr, else {
+                    // indiciative of extra positional
+                    break;
                 });
+                block_id
+            }
+            _ => unreachable!(),
+        };
 
-                (Some(first_block), None)
-            } else {
-                // update the signature for the second block
-                working_set
-                    .get_block_mut(second_block)
-                    .signature
-                    .clone_from(&signature);
-                (Some(second_block), Some(first_block))
-            }
-        }
-        None => {
-            if is_pure {
-                (None, Some(first_block))
-            } else {
-                (Some(first_block), None)
-            }
-        }
-    };
+        match kw_name.as_slice() {
+            b"where" => decl_body = Some(block_id),
+            b"do" => run_body = Some(block_id),
+            _ => unreachable!(),
+        };
+    }
+
+    if decl_body.is_none() && run_body.is_none() {
+        state.error(errors::TaskMissingBlocks { span: call.span() });
+        return Ok(());
+    }
+
+    // update signatures
+    for block_id in [decl_body, run_body].iter_mut().filter_map(Option::as_mut) {
+        working_set
+            .get_block_mut(*block_id)
+            .signature
+            .clone_from(&signature);
+    }
 
     // insert placeholder to be updated later with a `DependsTask` if successful
     let depends_decl_name = format!("depends {name}", name = &name.item);
@@ -136,13 +130,22 @@ fn parse_def_task(
     }
 
     // remove errors indicating a missing argument when only one block is provided
-    if run_body.is_some() != decl_body.is_some() {
-        let call_span = call.span();
-        working_set.parse_errors.retain(|e| {
-            !matches!(e, ParseError::MissingPositional(name, span, _)
-                                  if name == "second_body" && call_span.contains_span(*span))
-        });
-    }
+    // if run_body.is_some() != decl_body.is_some() {
+    let call_span = call.span();
+    working_set.parse_errors.retain(|e| match e {
+        ParseError::ExpectedKeyword(kw, span) | ParseError::KeywordMissingArgument(_, kw, span)
+            if call_span.contains_span(*span) && (kw == "where" || kw == "do") =>
+        {
+            false
+        }
+        ParseError::Expected(_, span) if call_span.contains_span(*span) => false,
+        ParseError::MissingPositional(arg, _, _)
+            if arg == "decl_body" || arg.starts_with("run_body") =>
+        {
+            false
+        }
+        _ => true,
+    });
 
     // note: errors when task has already been defined
     let name_span = name.span;
