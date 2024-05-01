@@ -44,6 +44,10 @@ pub fn create_engine_state(state: Arc<RwLock<State>>) -> EngineState {
 
         let mut working_set = StateWorkingSet::new(&engine_state);
 
+        // remove echo command as its behavior is confusing for users not familiar with
+        // nushell evaluation
+        working_set.hide_decl(b"echo");
+
         macro_rules! bind_global_variable {
             ($name:expr, $id:expr, $type:expr) => {
                 let var_id = working_set.add_variable($name.into(), Span::unknown(), $type, false);
