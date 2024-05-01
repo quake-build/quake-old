@@ -1,7 +1,11 @@
+use std::io::stdout;
+use std::sync::atomic::AtomicU32;
+use std::sync::Arc;
+
 use nu_protocol::ast::{Argument, Block};
 use nu_protocol::debugger::WithoutDebug;
-use nu_protocol::engine::{EngineState, Stack};
-use nu_protocol::{PipelineData, Span, Value, VarId};
+use nu_protocol::engine::{EngineState, Redirection, Stack};
+use nu_protocol::{IoStream, PipelineData, RawStream, Span, Value, VarId};
 
 use quake_core::metadata::TaskCallId;
 use quake_core::prelude::*;
@@ -18,12 +22,8 @@ pub fn eval_block(
         return Ok(true);
     }
 
-    let result = nu_engine::eval_block_with_early_return::<WithoutDebug>(
-        engine_state,
-        stack,
-        block,
-        PipelineData::Empty,
-    );
+    let result =
+        nu_engine::eval_block::<WithoutDebug>(engine_state, stack, block, PipelineData::Empty);
 
     // reset vt processing, aka ansi because illbehaved externals can break it
     #[cfg(windows)]
