@@ -1,0 +1,6 @@
+[book]
+authors = ["cassaundra"]
+language = "en"
+multilingual = false
+src = "src"
+title = "quake"
